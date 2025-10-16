@@ -39,7 +39,7 @@ decode_text_only=false
 output_text_only=false
 speech_sample_rate=22050
 
-decode_log=$ckpt_path/tts_decode_${split}_rp${repetition_penalty}_seed${dataset_sample_seed}_greedy_kaiyuan
+decode_log=$ckpt_path/tts_decode_${split}_greedy_kaiyuan
 
 if [ "$decode_text_only" = true ] ; then
     decode_log=$decode_log"_text_only"
