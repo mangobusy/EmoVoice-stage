@@ -1,3 +1,6 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
 from slam_llm.pipeline.finetune import main as train
 
 import hydra
@@ -6,6 +9,8 @@ from typing import Optional
 from dataclasses import dataclass, field
 from omegaconf import DictConfig, ListConfig, OmegaConf
 from tts_config import ModelConfig, TrainConfig, DataConfig, LogConfig, FSDPConfig, PeftConfig
+
+
 
 @dataclass
 class RunConfig:

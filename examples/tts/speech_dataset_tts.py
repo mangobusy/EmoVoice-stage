@@ -17,6 +17,12 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         
         self.IGNORE_INDEX = -100  # The default setting in CrossEntropyLoss
         self.use_emo = dataset_config.get("use_emo", False)
+
+        # ===================================================================================
+        # [MODIFIED] 读取配置，判断是否开启情绪回归 Loss
+        self.load_emotion_label = dataset_config.get("load_emotion_label", True)
+        # ===================================================================================
+
         self.en_dataset = dataset_config.get("en_dataset", False)
         self.prompt_template = "<SYSTEM>: {}\n "
         self.answer_template = "{}"
@@ -185,6 +191,15 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         key = data_dict.get("key", None)
         neutral_speaker_wav = data_dict.get("neutral_speaker_wav", None)
 
+        # ===================================================================================
+        # [MODIFIED] 提取情绪标签
+        emotion_labels = None
+        if self.load_emotion_label:
+            # 假设数据中 "emotions" 字段为 [Arousal, Valence]
+            emotion_labels = data_dict.get("emotion", [0.0, 0.0])
+        # ===================================================================================
+
+
         target_audio, target_audio_length = self.extract_audio_feature(target_audio)
 
         prompt="Say this sentence. "
@@ -219,7 +234,10 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         if self.inference_mode:
             example_mask = example_ids[0][0].ge(-1)  # [True,True]
             example_ids = torch.stack(example_ids).squeeze() if torch.stack(example_ids).shape[0]!=1 else torch.stack(example_ids).squeeze(0)
-            return {
+     
+        # ===================================================================================
+            # [MODIFIED] Inference Mode 返回字典
+            ret_dict = {
                 "input_ids": example_ids,
                 "attention_mask": example_mask,
                 "input_length": input_length,
@@ -232,6 +250,10 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
                 "prompt_length": prompt_length,
                 "neutral_speaker_wav": neutral_speaker_wav,
             }
+            if emotion_labels is not None:
+                ret_dict["emotion_labels"] = emotion_labels
+            return ret_dict
+        # ===================================================================================
 
         answer_text = self.answer_template.format(target_text)
         answer_text_ids = self.tokenizer.encode(answer_text)  # [answer]
@@ -304,7 +326,9 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         label_mask = labels_ids.ge(0)  # [False,False,True,True]
         labels_ids[~label_mask] = self.IGNORE_INDEX  # [-100,-100,answer,eos]
 
-        return {
+        # ===================================================================================
+
+        ret_dict = {
             "input_ids": example_ids,
             "labels": labels_ids,
             "attention_mask": example_mask,
@@ -317,6 +341,13 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
             "target_text": target_text,
             "prompt_length": prompt_length,
         }
+        # [MODIFIED] 将情绪标签加入 Training Mode 的返回字典
+        if emotion_labels is not None:
+            ret_dict["emotion_labels"] = emotion_labels
+
+        return ret_dict
+        # ===================================================================================
+
 
     def pad(self, sequence, max_length, padding_idx=0):
         if isinstance(sequence, (int, list, tuple)):
@@ -415,7 +446,8 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
             target_audio = [s['target_audio'] for s in samples]
             neutral_speaker_wav = [s['neutral_speaker_wav'] for s in samples]
 
-            return {
+        # ===================================================================================
+            ret_dict = {
                 "input_ids": input_ids,
                 "attention_mask": attention_mask,
                 "audio": audio_raw,
@@ -429,6 +461,11 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
                 "target_audio": target_audio,
                 "neutral_speaker_wav": neutral_speaker_wav,
             }
+            if "emotion_labels" in samples[0]:
+                ret_dict["emotion_labels"] = torch.tensor([s["emotion_labels"] for s in samples], dtype=torch.float32)
+            return ret_dict
+        # ===================================================================================
+
         
         labels = torch.stack([
             self.padding(
@@ -437,7 +474,9 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
             for index in range(len(samples))
         ])
         
-        return {
+        # ===================================================================================
+
+        batch = {
             "input_ids": input_ids,
             "labels": labels,
             "attention_mask": attention_mask,
@@ -447,6 +486,15 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
             "audio_length": audio_length,
             "modality_mask": modality_mask,
         }
+        # [MODIFIED] Training Collator: 处理 emotion_labels
+        if "emotion_labels" in samples[0]:
+            # 提取所有样本的 label, 形成 list
+            emo_list = [s["emotion_labels"] for s in samples]
+            # 转换为 Tensor [Batch, 2]
+            batch["emotion_labels"] = torch.tensor(emo_list, dtype=torch.float32)
+
+        return batch
+        # ===================================================================================
 
 
 def get_speech_dataset(dataset_config, tokenizer, split):

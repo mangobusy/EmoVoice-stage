@@ -23,7 +23,7 @@ def get_custom_model_factory(model_config, logger):
 
     module = load_module_from_py_file(module_path.as_posix())
     try:
-        return getattr(module, func_name)
+        return getattr(module, func_name)  # 返回slam_model_tts.py中的model_factory函数
     except AttributeError as e:
         logger.info(f"It seems like the given method name ({func_name}) is not present in the model .py file ({module_path.as_posix()}).")
         raise e

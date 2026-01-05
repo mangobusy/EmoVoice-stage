@@ -1,3 +1,8 @@
 backup
 .DS_Store
 __pycache__/
+checkpoint/
+/stage1_*/
+/stage2_*/
+/audios/
+/debug*/

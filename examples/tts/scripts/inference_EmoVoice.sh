@@ -1,17 +1,18 @@
 #!/bin/bash
-export PYTHONPATH=$PYTHONPATH:path/to/your/code/EmoVoice/src
-export CUDA_VISIBLE_DEVICES=2
+set -e
+export PYTHONPATH=$PYTHONPATH:/root/autodl-tmp/EmoVoice/src
+export CUDA_VISIBLE_DEVICES=0,1
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=1
 export PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT=2
 export CUDA_LAUNCH_BLOCKING=1
 
-code_dir=examples/tts
-llm_path="path/to/your/ckpts/Qwen/Qwen2.5-0.5B"
-codec_decoder_path="path/to/your/ckpts/CosyVoice/CosyVoice-300M-SFT"
-ckpt_path=path/to/your/ckpts/EmoVoice
+code_dir=/root/autodl-tmp/EmoVoice/examples/tts
+llm_path=/root/autodl-tmp/EmoVoice/checkpoint/Qwen2.5-0.5B
+codec_decoder_path=/root/autodl-tmp/EmoVoice/checkpoint/ckpts/CosyVoice/CosyVoice-300M-SFT
+ckpt_path=/root/autodl-tmp/EmoVoice/checkpoint 
 split=test
-val_data_path=../test.jsonl
+val_data_path=/root/autodl-tmp/data/EmoVoice-DB-Raw/test.jsonl
 
 # vocabulary settings
 code_layer=3            # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 
@@ -40,6 +41,7 @@ output_text_only=false
 speech_sample_rate=22050
 
 decode_log=$ckpt_path/tts_decode_${split}_rp${repetition_penalty}_seed${dataset_sample_seed}_greedy_kaiyuan
+
 
 if [ "$decode_text_only" = true ] ; then
     decode_log=$decode_log"_text_only"
@@ -96,6 +98,8 @@ python $code_dir/inference_tts.py \
 
 python examples/tts/utils/decode_whisper_v3.py --parent_dir $decode_log --audio_subdir pred_audio/neutral_prompt_speech
 
+
 bash scripts/compute_wer.sh $decode_log
 
 python examples/tts/utils/eval_emo_acc.py --gt $val_data_path --pred $decode_log --audio_subdir pred_audio/neutral_prompt_speech
+

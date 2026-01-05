@@ -5,15 +5,14 @@ import torch.nn.functional as F
 import numpy as np
 import json
 from funasr import AutoModel
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Inference')
-    parser.add_argument('--gt', type=str, default="../test.jsonl")
+    parser.add_argument('--gt', type=str, default="/root/autodl-tmp/data/EmoVoice-DB-Raw/test.jsonl")
     parser.add_argument('--pred', type=str)
-    parser.add_argument('--audio_subdir', type=str, default='pred_audio/default_tone', help='Subdirectory for audio files relative to the parent directory.')
+    parser.add_argument('--audio_subdir', type=str, default='/audio/angry', help='Subdirectory for audio files relative to the parent directory.')
     args = parser.parse_args()
 
-    pred_dir = os.path.join(args.pred, args.audio_subdir)
+    pred_dir = os.path.join(args.pred, args.audio_subdir)  # /root/autodl-tmp/EmoVoice/checkpoint/tts_decode_test_rp_seed_greedy_kaiyuan +'/audio/angry'
     output_path = os.path.join(args.pred, "emo1.log")
     model = AutoModel(model="iic/emotion2vec_plus_large")
     simis = []

@@ -4,6 +4,8 @@ from typing import Optional, List, Dict
 @dataclass
 class VocabConfig:
     text_vocabsize: int = 151936
+    # text_vocabsize: int = 170000
+
     text_specialtokens: int = 64
     audio_vocabsize: int = 4096
     audio_specialtokens: int = 64
@@ -68,7 +70,7 @@ class TTSAdapterConfig:
 
 @dataclass
 class ModelConfig:
-    file: str = "examples/tts/model/slam_model_tts.py:model_factory"
+    file: str = "examples/tts/model/slam_model_tts_2.py:model_factory"
     llm_name: str = "vicuna-13b-v1.5"
     llm_path: str = "PATH/to/LLAMA/7B"
     llm_type: str = "decoder_only"
@@ -169,6 +171,22 @@ class TrainConfig:
     })
     interleaved_text_token_num: int = 12
     interleaved_audio_token_num: int = 36
+    # =============================================================================
+    training_stage: int = field(default=2, metadata={
+        "help": "Training stage: 1 for emotion prediction only, 2 for speech generation"})        
+    # Stage 1: Emotion Prediction    
+    use_lm_loss_stage1: bool = field(default=False, metadata={
+        "help": "Whether to use language modeling loss in stage 1 (in addition to emotion loss)"})    
+    lm_loss_weight_stage1: float = field(default=0.1, metadata={
+        "help": "Weight of language modeling loss in stage 1"})        
+    # Stage 2: Speech Generation    
+    use_emotion_loss_stage2: bool = field(default=False, metadata={
+        "help": "Whether to use emotion loss in stage 2 (in addition to speech generation loss)"})    
+    emotion_loss_weight_stage2: float = field(default=0.1, metadata={
+        "help": "Weight of emotion loss in stage 2"})    
+    freeze_emotion_predictor: bool = field(default=False, metadata={
+        "help": "Whether to freeze emotion predictor in stage 2"})
+    # =============================================================================
 
 @dataclass
 class DataConfig:
@@ -203,6 +221,11 @@ class DataConfig:
     })
     interleaved_text_token_num: int = 12
     interleaved_audio_token_num: int = 36
+    # =============================================================================
+    load_emotion_label: bool = field(default=True, metadata={
+        "help": "Whether to load emotion labels (arousal, valence) from dataset"})
+    # =============================================================================
+
 
 @dataclass
 class DecodeConfig:

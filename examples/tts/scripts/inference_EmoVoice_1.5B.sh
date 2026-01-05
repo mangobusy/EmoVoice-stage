@@ -11,7 +11,7 @@ llm_path="path/to/your/ckpts/Qwen/Qwen2.5-1.5B"
 codec_decoder_path="path/to/your/ckpts/CosyVoice/CosyVoice-300M-SFT"
 ckpt_path=path/to/your/ckpts/EmoVoice_1.5B
 split=test
-val_data_path=../test.jsonl
+val_data_path=/root/autodl-tmp/data/EmoVoice-DB-Raw/test.jsonl
 
 # vocabulary settings
 code_layer=3            # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 

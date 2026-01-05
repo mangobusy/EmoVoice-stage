@@ -6,7 +6,12 @@ import hydra
 import torch
 import soundfile as sf
 from omegaconf import DictConfig, OmegaConf
+from tqdm import tqdm
 
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
+print(sys.path)
 from slam_llm.utils.model_utils import get_custom_model_factory
 from slam_llm.utils.dataset_utils import get_preprocessed_dataset
 from utils.codec_utils import audio_decode_cosyvoice
@@ -42,7 +47,7 @@ def main(kwargs: DictConfig):
 		filemode='w'
 	)
 	logger = logging.getLogger()  
-	logger.setLevel(logging.INFO)
+	logger.setLevel(logging.ERROR)
 
 	file_handler = logging.FileHandler(filename=log_config.log_file, mode='w')
 	file_handler.setLevel(logging.INFO)
@@ -135,7 +140,9 @@ def main(kwargs: DictConfig):
 	logger.info("============== Start {task_type} Inference ==============".format(task_type=task_type))
 
 	with open(pred_path, "w") as pred, open(gt_path, "w") as gt, open(question_path, "w") as q:
-		for step, batch in enumerate(test_dataloader):
+		tbar = tqdm(test_dataloader, desc="Inference", total=len(test_dataloader))
+		for step, batch in enumerate(tbar):
+			tbar.update(1)
 			for key in batch.keys():
 				batch[key] = batch[key].to(device) if isinstance(batch[key], torch.Tensor) else batch[key]
 
@@ -143,9 +150,9 @@ def main(kwargs: DictConfig):
 
 			start_time = time.time()
 			if modeling_paradigm == "parallel" or modeling_paradigm == "interleaved":
-				model_outputs = model.generate(**batch, **decode_config)
+				model_outputs = model.generate(**batch, **decode_config, disable_tqdm=True)
 			elif modeling_paradigm == "serial":
-				model_outputs = model.serial_generate(**batch, **decode_config)
+				model_outputs = model.serial_generate(**batch, **decode_config, disable_tqdm=True)
 
 			if modeling_paradigm == "parallel" or modeling_paradigm == "serial":
 				text_outputs = model_outputs[code_layer]

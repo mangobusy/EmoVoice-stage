@@ -80,6 +80,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
     best_val_loss = float("inf")
     best_val_acc = 0.0
     best_val_audio_acc =0.0
+    stage = getattr(train_config, 'training_stage', 1)
     for epoch in range(train_config.num_epochs):
         epoch_start_time = time.perf_counter()
         with MemoryTrace() as memtrace:  # track the memory usage
@@ -103,19 +104,84 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                                 batch[key][k2] = batch[key][k2].to('cuda:0') if isinstance(batch[key][k2], torch.Tensor) else batch[key][k2]
                 with autocast():
                     outputs, *rest = model(**batch)
-                acc = rest[0] if rest else -1 # text_acc
-                audio_acc = rest[1] if rest else -1   # audio acc
-                if train_config.modeling_paradigm == "parallel" or train_config.modeling_paradigm == "serial":
-                    layer_loss = rest[2] if rest else -1
-                else:
-                    layer_loss = [0]
+                # ==================== 分阶段解包逻辑 START ====================
+                if stage == 1:
+                    # Stage 1: Emotion Prediction
+                    # 假设模型返回: model_outputs, emotion_pred, [emotion_mae], [emotion_loss, emotion_mae]
+                    # rest[0]: emotion_pred (Tensor) - 忽略
+                    # rest[1]: [emotion_mae] (List of float) 或 scalar
+                    # rest[2]: loss_recorder [mse, mae]
+                    
+                    if len(rest) > 2:
+                        layer_loss = rest[2] # [mse, mae]
+                        # 兼容处理：如果 rest[1] 是列表取第一个，如果是标量直接用
+                        current_mae = rest[1][0] if isinstance(rest[1], list) else rest[1]
+                        acc = current_mae # 这里用 MAE 代替 ACC 变量进行记录
+                        audio_acc = [current_mae] # 保持格式一致
+                    else:
+                        # Fallback 防止越界
+                        layer_loss = [outputs.loss.item(), 0.0]
+                        acc = 0.0
+                        audio_acc = [0.0]
+
+               
+                
+                else:  # Stage 2: Speech Generation (Original)
+                    acc = rest[0] if rest else -1 # text_acc
+                    audio_acc = rest[1] if rest else -1   # audio acc
+
+                    if train_config.modeling_paradigm == "parallel" or train_config.modeling_paradigm == "serial":
+                        layer_loss = rest[2] if rest else -1
+                    else:
+                        layer_loss = [0]
+
                 loss = outputs.loss
 
                 loss = loss / gradient_accumulation_steps
-                layer_loss = [l / gradient_accumulation_steps for l in layer_loss]
+                # 处理 layer_loss (List) 的平均
+                if isinstance(layer_loss, list):
+                    layer_loss = [l / gradient_accumulation_steps for l in layer_loss]
+                # layer_loss = [l / gradient_accumulation_steps for l in layer_loss]
+                # acc = acc / gradient_accumulation_steps
+                # audio_acc = [acc / gradient_accumulation_steps for acc in audio_acc]
                 acc = acc / gradient_accumulation_steps
-                audio_acc = [acc / gradient_accumulation_steps for acc in audio_acc]
 
+                if isinstance(audio_acc, list):
+                    audio_acc = [a / gradient_accumulation_steps for a in audio_acc]
+                else:
+                    audio_acc = audio_acc / gradient_accumulation_steps
+                    audio_acc = [audio_acc] 
+                # ==================== WandB 日志记录 START ====================
+                if log_config.use_wandb and step % log_config.log_interval == 0:
+                    log_dict = {}
+                    
+                    if stage == 1:
+                        # Stage 1 Logs
+                        log_dict["train_inner/loss"] = loss
+                        log_dict["train_inner/emotion_mae"] = acc # 这里的 acc 实际上是 MAE
+                        if len(layer_loss) >= 2:
+                            log_dict["train_inner/emotion_mse_raw"] = layer_loss[0]
+                            log_dict["train_inner/emotion_mae_raw"] = layer_loss[1]
+                    else:
+                        # Stage 2 Logs
+                        log_dict["train_inner/train_inner_loss"] = loss
+                        log_dict["train_inner/train_inner_text_accuracy"] = acc
+                        for layer, a_acc in enumerate(audio_acc):
+                            log_dict[f"train_inner/train_inner_audio_accuracy_layer{layer}"] = a_acc
+                        
+                        if isinstance(layer_loss, list) and len(layer_loss) > 1:
+                            for layer, l in enumerate(layer_loss[:-1]):
+                                log_dict[f"train_inner/train_inner_audio_loss_layer{layer}"] = l
+                            log_dict[f"train_inner/train_inner_text_loss"] = layer_loss[-1]
+
+                    if train_config.enable_fsdp or train_config.enable_ddp:
+                        if rank == 0:
+                            wandb.log(log_dict, step=(epoch * total_length + step))
+                    else:
+                        wandb.log(log_dict, step=(epoch * total_length + step))
+                # ==================== WandB 日志记录 END ======================
+                
+                '''
                 if log_config.use_wandb and step % log_config.log_interval == 0:
                     if train_config.enable_fsdp or train_config.enable_ddp:
                         if rank==0:
@@ -132,7 +198,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         for layer, l in enumerate(layer_loss[:-1]):
                             wandb.log({f"train_inner/train_inner_audio_loss_layer{layer}":l}, step=(epoch * total_length + step))
                         wandb.log({f"train_inner/train_inner_text_loss":layer_loss[-1]}, step=(epoch * total_length + step))
-                    
+                    '''
                 total_loss += loss.detach().float()
                 total_acc += acc # text_acc
                 total_audio_acc += audio_acc[0]
@@ -177,18 +243,46 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                                 wandb.log({"train_inner/lr":current_lr}, step=(epoch * total_length + step))
                         optimizer.zero_grad()
                         pbar.update(1)
+                # 更新进度条描述
+                if stage == 1:
+                    desc_str = f"Epoch: {epoch+1}, step {step}/{len(train_dataloader)} (loss: {loss.detach().float():.4f}, MAE: {acc:.4f})"
+                else:
+                    desc_str = f"Epoch: {epoch+1}, step {step}/{len(train_dataloader)} (loss: {loss.detach().float():.4f}, audio_acc: {audio_acc[0]:.4f}, text_acc: {acc:.4f})"
+                # pbar.set_description(f"Training Epoch: {epoch+1}/{train_config.num_epochs}, step {step}/{len(train_dataloader)} completed (loss: {loss.detach().float():.4f}, audio_acc: {audio_acc[0]:.4f}, text_acc: {acc:.4f})")
+                pbar.set_description(desc_str)
 
-                pbar.set_description(f"Training Epoch: {epoch+1}/{train_config.num_epochs}, step {step}/{len(train_dataloader)} completed (loss: {loss.detach().float():.4f}, audio_acc: {audio_acc[0]:.4f}, text_acc: {acc:.4f})")
-                
                 if (epoch * total_length + step + 1) % train_config.validation_interval == 0 and train_config.run_validation:
                     eval_ppl, eval_epoch_loss, *rest = evaluation(model, train_config, eval_dataloader, local_rank, tokenizer)
+                    # ====================================================
+                    if stage == 1:
+                        # Stage 1: eval_acc 用作 MAE
+                        eval_epoch_mae = rest[0] if rest else float("inf")
+                        # 逻辑反转：对于 Stage 1，越小越好
+                        is_best = eval_epoch_mae < best_val_acc if best_val_acc != 0 else True # best_val_acc 这里暂存 best_mae
+                        current_metric = eval_epoch_mae
+                    else:
+                        eval_epoch_acc = rest[0] if rest else -1
+                        eval_epoch_audio_acc = rest[1] if rest else -1
+                        is_best = eval_epoch_loss < best_val_loss # 或者使用 acc 判断
+                        current_metric = eval_epoch_acc
+                    # ====================================================
+                    '''
                     eval_epoch_acc = rest[0] if rest else -1
-                    eval_epoch_audio_acc = rest[1] if rest else -1
+                    eval_epoch_audio_acc = rest[1] if rest else -1'''
                     checkpoint_start_time = time.perf_counter()
+                    
                     # if train_config.save_model and (eval_epoch_loss < best_val_loss):
                     # if train_config.save_model and (eval_epoch_loss < best_val_loss or eval_epoch_audio_acc > best_val_audio_acc or eval_epoch_acc > best_val_acc):
+                    
+                    
+                    
+                    
                     if train_config.save_model:
-                        checkpoint_name = f"{train_config.model_name}_epoch_{str(epoch+1)}_step_{step+1}"
+                        # ==================================================================================================================
+                        '''checkpoint_name = f"{train_config.model_name}_epoch_{str(epoch+1)}_step_{step+1}" '''
+                        checkpoint_name = f"{train_config.model_name}_latest"  # 只保存最新的模型
+                        # ==================================================================================================================
+
                         if train_config.enable_fsdp or train_config.enable_ddp:
                             dist.barrier()
                         if train_config.use_peft:
@@ -294,38 +388,57 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                                 logger.info(f"best eval loss on epoch {epoch+1} is {best_val_loss}")
                         else:
                             logger.info(f"best eval loss on epoch {epoch+1} is {best_val_loss}")
+                   
                     val_loss.append(eval_epoch_loss)
                     val_prep.append(eval_ppl)
-                    if rest:
-                        if eval_epoch_acc > best_val_acc:
-                            best_val_acc = eval_epoch_acc
-                            if train_config.enable_fsdp or train_config.enable_ddp:
-                                if rank==0:
-                                    logger.info(f"best eval acc on epoch {epoch+1} is {best_val_acc}")
-                            else:
-                                logger.info(f"best eval acc on epoch {epoch+1} is {best_val_acc}")
-                        val_acc.append(rest[0]) 
 
-                        if eval_epoch_audio_acc > best_val_audio_acc:
-                            best_val_audio_acc = eval_epoch_audio_acc
-                            if train_config.enable_fsdp or train_config.enable_ddp:
-                                if rank==0:
-                                    logger.info(f"best eval audio acc on epoch {epoch+1} is {best_val_audio_acc}")
-                            else:
-                                logger.info(f"best eval audio acc on epoch {epoch+1} is {best_val_audio_acc}")
-                        val_audio_acc.append(rest[1]) 
-                    else: 
-                        val_acc.append(-1)
+                    if stage == 1:
+                        # Stage 1 Metrics Recording
+                        # 这里复用 best_val_acc 变量来存储 best_val_mae (越小越好)
+                        if best_val_acc == 0.0 or eval_epoch_mae < best_val_acc:
+                            best_val_acc = eval_epoch_mae
+                            if rank == 0: logger.info(f"best eval MAE on epoch {epoch+1} is {best_val_acc}")
+                        val_acc.append(eval_epoch_mae)
                         val_audio_acc.append(-1)
-                    
-                    if log_config.use_wandb:
-                        if train_config.enable_fsdp or train_config.enable_ddp:
-                            if rank==0:
-                                wandb.log({"valid/val_epoch_loss":eval_epoch_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_accuracy":val_acc[-1], "valid/val_audio_accuracy":val_audio_acc[-1], "valid/val_best_audio_accuracy":best_val_audio_acc, "valid/val_best_accuracy":best_val_acc })
-                        else:
-                            wandb.log({"valid/val_epoch_loss":eval_epoch_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_accuracy":val_acc[-1], "valid/val_audio_accuracy":val_audio_acc[-1], "valid/val_best_audio_accuracy":best_val_audio_acc, "valid/val_best_accuracy":best_val_acc })
+                        
+                        if log_config.use_wandb and rank == 0:
+                            wandb.log({
+                                "valid/val_epoch_loss": eval_epoch_loss, 
+                                "valid/val_mae": eval_epoch_mae, 
+                                "valid/best_val_loss": best_val_loss,
+                                "valid/best_val_mae": best_val_acc
+                            })
+                    else: # Stage 2 Metrics Recording
+                        if rest:
+                            if eval_epoch_acc > best_val_acc:
+                                best_val_acc = eval_epoch_acc
+                                if train_config.enable_fsdp or train_config.enable_ddp:
+                                    if rank==0:
+                                        logger.info(f"best eval acc on epoch {epoch+1} is {best_val_acc}")
+                                else:
+                                    logger.info(f"best eval acc on epoch {epoch+1} is {best_val_acc}")
+                            val_acc.append(rest[0]) 
 
-                if train_config.run_test_during_validation:
+                            if eval_epoch_audio_acc > best_val_audio_acc:
+                                best_val_audio_acc = eval_epoch_audio_acc
+                                if train_config.enable_fsdp or train_config.enable_ddp:
+                                    if rank==0:
+                                        logger.info(f"best eval audio acc on epoch {epoch+1} is {best_val_audio_acc}")
+                                else:
+                                    logger.info(f"best eval audio acc on epoch {epoch+1} is {best_val_audio_acc}")
+                            val_audio_acc.append(rest[1]) 
+                        else: 
+                            val_acc.append(-1)
+                            val_audio_acc.append(-1)
+                    
+                        if log_config.use_wandb:
+                            if train_config.enable_fsdp or train_config.enable_ddp:
+                                if rank==0:
+                                    wandb.log({"valid/val_epoch_loss":eval_epoch_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_accuracy":val_acc[-1], "valid/val_audio_accuracy":val_audio_acc[-1], "valid/val_best_audio_accuracy":best_val_audio_acc, "valid/val_best_accuracy":best_val_acc })
+                            else:
+                                wandb.log({"valid/val_epoch_loss":eval_epoch_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_accuracy":val_acc[-1], "valid/val_audio_accuracy":val_audio_acc[-1], "valid/val_best_audio_accuracy":best_val_audio_acc, "valid/val_best_accuracy":best_val_acc })
+
+                if train_config.run_test_during_validation and stage != 1:
                     if train_config.enable_fsdp or train_config.enable_ddp:
                         if rank==0:
                             logger.info("=====================================")
@@ -346,6 +459,24 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
         epoch_times.append(epoch_end_time)
         # Reducing total_loss across all devices if there's more than one CUDA device
         if torch.cuda.device_count() > 1 and (train_config.enable_fsdp or train_config.enable_ddp):
+
+            # ============ 修复代码 START ============
+            # dist.all_reduce 必须要 Tensor，如果是 float (Stage 1) 需要转换
+            # 使用 local_rank 确保 Tensor 在正确的 GPU 上
+            
+            # 1. 转换 total_loss
+            if not isinstance(total_loss, torch.Tensor):
+                total_loss = torch.tensor(total_loss).to(local_rank)
+            
+            # 2. 转换 total_acc (报错点)
+            if not isinstance(total_acc, torch.Tensor):
+                total_acc = torch.tensor(total_acc).to(local_rank)
+                
+            # 3. 转换 total_audio_acc
+            if not isinstance(total_audio_acc, torch.Tensor):
+                total_audio_acc = torch.tensor(total_audio_acc).to(local_rank)
+            # ============ 修复代码 END ============
+
             dist.all_reduce(total_loss, op=dist.ReduceOp.SUM)
             dist.all_reduce(total_acc, op=dist.ReduceOp.SUM)
             dist.all_reduce(total_audio_acc, op=dist.ReduceOp.SUM)
@@ -366,7 +497,11 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
         if log_config.use_wandb:
             if train_config.enable_fsdp or train_config.enable_ddp:
                 if rank==0:
-                    wandb.log({"train/train_perplexity":train_perplexity, "train/train_epoch_loss":train_epoch_loss, "train/train_epoch_acc":train_epoch_acc, "train/train_epoch_audio_acc":train_epoch_audio_acc})
+                    if stage == 1:
+                        logger.info(f"Epoch {epoch+1}: loss={train_epoch_loss:.4f}, MAE={train_epoch_acc:.4f}, time {epoch_end_time}s")
+                    else:
+                        logger.info(f"Epoch {epoch+1}: ppl={train_perplexity:.4f}, loss={train_epoch_loss:.4f}, acc={train_epoch_acc:.4f}, time {epoch_end_time}s")
+                    # wandb.log({"train/train_perplexity":train_perplexity, "train/train_epoch_loss":train_epoch_loss, "train/train_epoch_acc":train_epoch_acc, "train/train_epoch_audio_acc":train_epoch_audio_acc})
             else:
                 wandb.log({"train/train_perplexity":train_perplexity, "train/train_epoch_loss":train_epoch_loss, "train/train_epoch_acc":train_epoch_acc, "train/train_epoch_audio_acc":train_epoch_audio_acc})
 
@@ -448,26 +583,70 @@ def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
                 # Forward pass and compute loss
                 with autocast():
                     outputs, *rest = model(**batch)
-                acc = rest[0] if rest else -1 #text_acc
-                audio_acc = rest[1][0] if rest else -1   # seven layers of audio acc
+                # acc = rest[0] if rest else -1 #text_acc
+                # audio_acc = rest[1][0] if rest else -1   # seven layers of audio acc
                 loss = outputs.loss
-
                 eval_loss += loss.detach().float()
-                eval_acc += acc
-                eval_audio_acc += audio_acc
-            # Decode predictions and add to evaluation predictions list
-            try:
-                preds = torch.argmax(outputs.logits, -1)
-                eval_preds.extend(
-                    tokenizer.batch_decode(preds.detach().cpu().numpy(), skip_special_tokens=True)
-                )
-            except Exception:
-                pass  # vallex does not need to show it's result (we can't view any thing from abstract acoustic token)
+                
+                if train_config.training_stage == 1:
+                    # Stage 1 Evaluation (Regression)
+                    # rest[1] 应该是 MAE (Scalar or List)
+                    if len(rest) > 1:
+                        mae_val = rest[1][0] if isinstance(rest[1], list) else rest[1]
+                        eval_acc += mae_val # Accumulate MAE
+                    # Stage 1 不需要解码 token，直接跳过 try-catch 部分
+                
+                else:
+                    # Stage 2 Evaluation (Generation)
+                    acc = rest[0] if rest else -1 
+                    audio_acc = rest[1][0] if rest else -1
+                    eval_acc += acc
+                    eval_audio_acc += audio_acc
+                    
+                    # Decode predictions (仅在 Stage 2 进行)
+                    try:
+                        preds = torch.argmax(outputs.logits, -1)
+                        eval_preds.extend(
+                            tokenizer.batch_decode(preds.detach().cpu().numpy(), skip_special_tokens=True)
+                        )
+                    except Exception:
+                        pass 
             pbar.update(1)
-            pbar.set_description(f"step: {step+1}/{total_length}, eval_loss: {eval_loss/(step+1):.4f}, eval_audio_acc: {eval_audio_acc/(step+1):.4f}, eval_acc: {eval_acc/(step+1):.4f}")
+            if train_config.training_stage == 1:
+                 pbar.set_description(f"step: {step+1}/{total_length}, eval_loss: {eval_loss/(step+1):.4f}, eval_mae: {eval_acc/(step+1):.4f}")
+            else:
+                 pbar.set_description(f"step: {step+1}/{total_length}, eval_loss: {eval_loss/(step+1):.4f}, eval_acc: {eval_acc/(step+1):.4f}")
+
+
+
+                # eval_acc += acc
+                # eval_audio_acc += audio_acc
+            # Decode predictions and add to evaluation predictions list
+            # try:
+            #     preds = torch.argmax(outputs.logits, -1)
+            #     eval_preds.extend(
+            #         tokenizer.batch_decode(preds.detach().cpu().numpy(), skip_special_tokens=True)
+            #     )
+            # except Exception:
+            #     pass  # vallex does not need to show it's result (we can't view any thing from abstract acoustic token)
+            
+            # pbar.update(1)
+            # pbar.set_description(f"step: {step+1}/{total_length}, eval_loss: {eval_loss/(step+1):.4f}, eval_audio_acc: {eval_audio_acc/(step+1):.4f}, eval_acc: {eval_acc/(step+1):.4f}")
 
     # If there's more than one CUDA device, reduce evaluation loss across all devices
     if torch.cuda.device_count() > 1 and train_config.enable_fsdp or train_config.enable_ddp:
+
+        # ============ 修复代码 START ============
+        if not isinstance(eval_loss, torch.Tensor):
+            eval_loss = torch.tensor(eval_loss).to(local_rank)
+            
+        if not isinstance(eval_acc, torch.Tensor):
+            eval_acc = torch.tensor(eval_acc).to(local_rank)
+            
+        if not isinstance(eval_audio_acc, torch.Tensor):
+            eval_audio_acc = torch.tensor(eval_audio_acc).to(local_rank)
+        # ============ 修复代码 END ============
+
         dist.all_reduce(eval_loss, op=dist.ReduceOp.SUM)
         dist.all_reduce(eval_acc, op=dist.ReduceOp.SUM)
         dist.all_reduce(eval_audio_acc, op=dist.ReduceOp.SUM)

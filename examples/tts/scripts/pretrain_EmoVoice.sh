@@ -1,15 +1,15 @@
 #!/bin/bash
-export PYTHONPATH=$PYTHONPATH:path/to/your/code/EmoVoice/src
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export PYTHONPATH=$PYTHONPATH:/root/autodl-tmp/EmoVoice/src
+export CUDA_VISIBLE_DEVICES=0,1
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=1
 
-code_dir=examples/tts
+code_dir=/root/autodl-tmp/EmoVoice/examples/tts
 num_gpus_per_node=$(( $(echo ${CUDA_VISIBLE_DEVICES} | tr -cd ',' | wc -c) + 1 ))
 num_nodes=1
 num_gpus=$(( num_gpus_per_node * num_nodes ))
 
-llm_path="path/to/your/ckpts/Qwen/Qwen2.5-0.5B"
+llm_path=/root/autodl-tmp/EmoVoice/checkpoint/Qwen2.5-0.5B
 llm_name=Qwen2.5-0.5b
 llm_dim=896                         # 896 1536 3584 8192  -> 0.5B 1.5B 3B 7B
 
@@ -24,8 +24,11 @@ num_latency_tokens=0                # number of latency tokens (in front of the 
 do_layershift=false                 # if false, tokens in each layers use the same codebook, otherwise, use different codebooks
 
 # dataset settings
-train_data_path="path/to/your/data/VoiceAssistant-400K-v2/train.jsonl"
-val_data_path="path/to/your/data/VoiceAssistant-400K-v2/val.jsonl"
+train_data_path="/root/autodl-tmp/data/VoiceAssistant-400K-v2/train_0.jsonl"
+val_data_path="/root/autodl-tmp/data/VoiceAssistant-400K-v2/val_0.jsonl"
+# train_data_path="/root/autodl-tmp/data/story_audio_w_emotion_tra/MsceneSpeech/MsceneSpeech_train_emotion.jsonl"
+# val_data_path="/root/autodl-tmp/data/VoiceAssistant-400K-v2/val_0.jsonl"
+
 
 # training settings
 batch_size_training=6
@@ -37,7 +40,11 @@ warmup_steps=1000
 total_steps=100000
 
 # validation settings
-validation_interval=10000
+# -----------------------------------------------------------------------------------
+# validation_interval=10000
+validation_interval=2
+# -----------------------------------------------------------------------------------
+
 split_size=0.01
 # model settings
 group_decode=true
@@ -45,11 +52,12 @@ group_decode_adapter_type=linear
 
 # log settings
 exp_name="debug2"
+exp_name="stage1_emotion_regression"  # 建议修改实验名称以区分阶段
 
-wandb_entity_name=yanghaha
+wandb_entity_name=u03zs21-sun-yat-sen-university
 wandb_project_name=SLAM-Omni
 
-home_dir=path/to/your/home_dir
+home_dir=/root/autodl-tmp/EmoVoice
 output_dir=$home_dir/$exp_name
 
 if [ "$exp_name" = "debug" ]; then
@@ -90,7 +98,7 @@ hydra.run.dir=$output_dir \
 ++train_config.lr=$lr \
 ++train_config.validation_interval=$validation_interval \
 ++train_config.batch_size_training=$batch_size_training \
-++train_config.val_batch_size=$batch_size_training \
+++train_config.val_batch_size=1 \
 ++train_config.num_workers_dataloader=0 \
 ++train_config.output_dir=$output_dir \
 ++train_config.use_fp16=$use_fp16 \

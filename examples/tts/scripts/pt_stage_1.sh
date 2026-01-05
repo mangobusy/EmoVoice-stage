@@ -5,53 +5,47 @@ export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=1
 
 code_dir=/root/autodl-tmp/EmoVoice/examples/tts
+# 假设你将第一阶段的python脚本命名为 train_stage1_emotion.py
+# script_name=slam_model_tts_2.py 
+
 num_gpus_per_node=$(( $(echo ${CUDA_VISIBLE_DEVICES} | tr -cd ',' | wc -c) + 1 ))
 num_nodes=1
 num_gpus=$(( num_gpus_per_node * num_nodes ))
 
 llm_path=/root/autodl-tmp/EmoVoice/checkpoint/Qwen2.5-0.5B
 llm_name=Qwen2.5-0.5b
-llm_dim=896                         # 896 1536 3584 8192  -> 0.5B 1.5B 3B 7B
+llm_dim=896
 
 # vocabulary settings
-code_layer=3                        # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 
-total_audio_vocabsize=4160          # the vocab size of the codec token
-llm_vocabsize=152000                # the vocab size of the LLM model (Qwen2 here)
+code_layer=3
+total_audio_vocabsize=4160
+llm_vocabsize=170000
 total_vocabsize=$((total_audio_vocabsize + llm_vocabsize))
 
-# code settings
-num_latency_tokens=0                # number of latency tokens (in front of the generated audio tokens)
-do_layershift=false                 # if false, tokens in each layers use the same codebook, otherwise, use different codebooks
+# dataset settings (Stage 1 只需要文本和情感标签)
+train_stage=1
+echo "Starting Stage 1 Training: Emotion Regression"
+train_data_path="/root/autodl-tmp/data/story_audio_w_emotion_tra/MsceneSpeech/MsceneSpeech_train.jsonl"
+val_data_path="/root/autodl-tmp/data/story_audio_w_emotion_tra/MsceneSpeech/MsceneSpeech_val.jsonl"
 
-# dataset settings
-train_data_path=/root/autodl-tmp/data/EmoVoice-DB-Raw/train.jsonl
-val_data_path=/root/autodl-tmp/data/EmoVoice-DB-Raw/test.jsonl
 
 # training settings
+# Stage 1 主要是回归任务，Batch size 可以适当大一点
 batch_size_training=6
 use_fp16=true
-use_peft=false
-num_epochs=400
-lr=1e-5
-warmup_steps=1000
-total_steps=100000
-
-# validation settings
-validation_interval=2500
-split_size=0.01
-# model settings
-group_decode=true
-group_decode_adapter_type=linear
+use_peft=false 
+num_epochs=10
+lr=1e-4
+warmup_steps=500
+total_steps=50000
+validation_interval=500
 
 # log settings
-exp_name="debug1"
-
-wandb_entity_name=yanghaha
+exp_name="stage1_emotion_regression"
+wandb_entity_name=u03zs21-sun-yat-sen-university
 wandb_project_name=SLAM-Omni
-
 home_dir=/root/autodl-tmp/EmoVoice
 output_dir=$home_dir/$exp_name
-ckpt_path=/root/autodl-tmp/EmoVoice/checkpoint # this line is for resuming training
 
 if [ "$exp_name" = "debug" ]; then
     use_wandb=false
@@ -60,6 +54,7 @@ else
 fi
 wandb_exp_name=$exp_name
 
+# Hydra Arguments specifically for Stage 1
 hydra_args="
 hydra.run.dir=$output_dir \
 ++model_config.llm_name=$llm_name \
@@ -68,20 +63,17 @@ hydra.run.dir=$output_dir \
 ++model_config.vocab_config.code_layer=$code_layer \
 ++model_config.vocab_config.total_audio_vocabsize=$total_audio_vocabsize \
 ++model_config.vocab_config.total_vocabsize=$total_vocabsize \
-++model_config.group_decode=$group_decode \
-++model_config.group_decode_adapter_type=$group_decode_adapter_type \
 ++dataset_config.dataset=speech_dataset_tts \
 ++dataset_config.train_data_path=$train_data_path \
 ++dataset_config.val_data_path=$val_data_path \
 ++dataset_config.seed=42 \
-++dataset_config.split_size=$split_size \
+++dataset_config.split_size=0.01 \
 ++dataset_config.vocab_config.code_layer=$code_layer \
 ++dataset_config.vocab_config.total_audio_vocabsize=$total_audio_vocabsize \
 ++dataset_config.vocab_config.total_vocabsize=$total_vocabsize \
-++dataset_config.num_latency_tokens=$num_latency_tokens \
-++dataset_config.do_layershift=$do_layershift \
-++dataset_config.use_emo=true \
-++dataset_config.use_text_stream=false \
+++dataset_config.load_emotion_label=true \
+++train_config.training_stage=$train_stage \
+++train_config.use_lm_loss_stage1=false \
 ++train_config.model_name=tts \
 ++train_config.num_epochs=$num_epochs \
 ++train_config.freeze_encoder=true \
@@ -92,23 +84,19 @@ hydra.run.dir=$output_dir \
 ++train_config.lr=$lr \
 ++train_config.validation_interval=$validation_interval \
 ++train_config.batch_size_training=$batch_size_training \
-++train_config.val_batch_size=$batch_size_training \
-++train_config.num_workers_dataloader=1 \
+++train_config.val_batch_size=1 \
+++train_config.num_workers_dataloader=4 \
 ++train_config.output_dir=$output_dir \
 ++train_config.use_fp16=$use_fp16 \
 ++train_config.use_peft=$use_peft \
-++metric=acc \
 ++log_config.use_wandb=$use_wandb \
 ++log_config.wandb_entity_name=$wandb_entity_name \
 ++log_config.wandb_project_name=$wandb_project_name \
 ++log_config.wandb_exp_name=$wandb_exp_name \
 ++log_config.wandb_dir=$output_dir \
 ++log_config.log_file=$output_dir/exp.log \
-++log_config.log_interval=100 \
-++ckpt_path=$ckpt_path/EmoVoice.pt \
+++log_config.log_interval=50 \
 "
-# ↑ this line is for resuming training
-
 
 if [[ $CUDA_VISIBLE_DEVICES != *","* ]]; then
     if [ "$exp_name" = "debug" ]; then
