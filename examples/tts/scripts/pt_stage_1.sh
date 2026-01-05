@@ -19,8 +19,13 @@ llm_dim=896
 # vocabulary settings
 code_layer=3
 total_audio_vocabsize=4160
-llm_vocabsize=170000
+llm_vocabsize=152000
 total_vocabsize=$((total_audio_vocabsize + llm_vocabsize))
+# code settings
+num_latency_tokens=0                # number of latency tokens (in front of the generated audio tokens)
+do_layershift=false                 # if false, tokens in each layers use the same codebook, otherwise, use different codebooks
+
+# if do layershift, actual_audioo_size = code_layer * total_audio_vocabsize, else actual_audioo_size = total_audio_vocabsize
 
 # dataset settings (Stage 1 只需要文本和情感标签)
 train_stage=1
@@ -71,6 +76,9 @@ hydra.run.dir=$output_dir \
 ++dataset_config.vocab_config.code_layer=$code_layer \
 ++dataset_config.vocab_config.total_audio_vocabsize=$total_audio_vocabsize \
 ++dataset_config.vocab_config.total_vocabsize=$total_vocabsize \
+++dataset_config.num_latency_tokens=$num_latency_tokens \
+++dataset_config.do_layershift=$do_layershift \
+++dataset_config.use_text_stream=false \
 ++dataset_config.load_emotion_label=true \
 ++train_config.training_stage=$train_stage \
 ++train_config.use_lm_loss_stage1=false \

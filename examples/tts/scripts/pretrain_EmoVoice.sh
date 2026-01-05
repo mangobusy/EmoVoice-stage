@@ -24,7 +24,7 @@ num_latency_tokens=0                # number of latency tokens (in front of the 
 do_layershift=false                 # if false, tokens in each layers use the same codebook, otherwise, use different codebooks
 
 # dataset settings
-train_data_path="/root/autodl-tmp/data/VoiceAssistant-400K-v2/train_0.jsonl"
+train_data_path="/root/autodl-tmp/data/story_audio_w_emotion_tra/MsceneSpeech/MsceneSpeech_train_cleaned.jsonl"
 val_data_path="/root/autodl-tmp/data/VoiceAssistant-400K-v2/val_0.jsonl"
 # train_data_path="/root/autodl-tmp/data/story_audio_w_emotion_tra/MsceneSpeech/MsceneSpeech_train_emotion.jsonl"
 # val_data_path="/root/autodl-tmp/data/VoiceAssistant-400K-v2/val_0.jsonl"
