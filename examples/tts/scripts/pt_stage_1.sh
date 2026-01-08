@@ -1,4 +1,7 @@
 #!/bin/bash
+
+# 测试git-----------------------------------------------------------------
+
 export PYTHONPATH=$PYTHONPATH:/root/autodl-tmp/EmoVoice/src
 export CUDA_VISIBLE_DEVICES=0,1
 export TOKENIZERS_PARALLELISM=false
