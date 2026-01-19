@@ -461,8 +461,8 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
                 "target_audio": target_audio,
                 "neutral_speaker_wav": neutral_speaker_wav,
             }
-            if "emotion_labels" in samples[0]:
-                ret_dict["emotion_labels"] = torch.tensor([s["emotion_labels"] for s in samples], dtype=torch.float32)
+            # if "emotion_labels" in samples[0]:
+            #     ret_dict["emotion_labels"] = torch.tensor([s["emotion_labels"] for s in samples], dtype=torch.float32)
             return ret_dict
         # ===================================================================================
 

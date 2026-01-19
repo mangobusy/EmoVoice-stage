@@ -70,7 +70,7 @@ class TTSAdapterConfig:
 
 @dataclass
 class ModelConfig:
-    file: str = "examples/tts/model/slam_model_tts_2.py:model_factory"
+    file: str = "examples/tts/model/slam_model_tts.py:model_factory"
     llm_name: str = "vicuna-13b-v1.5"
     llm_path: str = "PATH/to/LLAMA/7B"
     llm_type: str = "decoder_only"

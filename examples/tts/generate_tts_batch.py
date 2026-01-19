@@ -140,19 +140,22 @@ def main(kwargs: DictConfig):
 	logger.info("============== Start {task_type} Inference ==============".format(task_type=task_type))
 
 	with open(pred_path, "w") as pred, open(gt_path, "w") as gt, open(question_path, "w") as q:
-		tbar = tqdm(test_dataloader, desc="Inference", total=len(test_dataloader))
-		for step, batch in enumerate(tbar):
-			tbar.update(1)
+		# tbar = tqdm(test_dataloader, desc="Inference", total=len(test_dataloader))
+		for step, batch in enumerate(test_dataloader):
+			# tbar.update(1)
 			for key in batch.keys():
 				batch[key] = batch[key].to(device) if isinstance(batch[key], torch.Tensor) else batch[key]
 
 			audio_prompt_path = batch["neutral_speaker_wav"][0]
+			# =======================================================================================
+			audio_prompt_path = "/root/autodl-tmp/data/EmoVoice-DB-Raw/"+audio_prompt_path
+			# =======================================================================================
 
 			start_time = time.time()
 			if modeling_paradigm == "parallel" or modeling_paradigm == "interleaved":
-				model_outputs = model.generate(**batch, **decode_config, disable_tqdm=True)
+				model_outputs = model.generate(**batch, **decode_config)
 			elif modeling_paradigm == "serial":
-				model_outputs = model.serial_generate(**batch, **decode_config, disable_tqdm=True)
+				model_outputs = model.serial_generate(**batch, **decode_config)
 
 			if modeling_paradigm == "parallel" or modeling_paradigm == "serial":
 				text_outputs = model_outputs[code_layer]
