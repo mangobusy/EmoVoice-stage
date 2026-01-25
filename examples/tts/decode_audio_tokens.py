@@ -7,6 +7,19 @@ from typing import Iterable, List, Optional
 import soundfile as sf
 import torch
 
+'''
+python examples/tts/decode_audio_tokens.py \
+  --jsonl /root/autodl-tmp/data/Data_preprocess/test_tokenizer.jsonl \
+  --output-dir /root/autodl-tmp/data/Data_preprocess/test_tokenizer \
+  --codec-decoder-path /root/autodl-tmp/EmoVoice/checkpoint/ckpts/CosyVoice/CosyVoice-300M-SFT \
+  --audio-prompt-path /root/autodl-tmp/data/EmoVoice-DB-Raw/audio/neutral/gpt4o_6000_neutral_verse.wav \
+  --token-field answer_cosyvoice_speech_token \
+  --code-layer 1 \
+  --num-latency-tokens 0 \
+  --ensure-eoa
+'''
+
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(SCRIPT_DIR)
 sys.path.append(os.path.abspath(os.path.join(SCRIPT_DIR, "../../src")))

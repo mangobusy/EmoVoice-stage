@@ -6,3 +6,5 @@ checkpoint/
 /stage2_*/
 /audios/
 /debug*/
+/Unified_Training/
+/wandb/

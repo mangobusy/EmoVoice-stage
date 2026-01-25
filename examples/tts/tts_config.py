@@ -9,12 +9,15 @@ class VocabConfig:
     text_specialtokens: int = 64
     audio_vocabsize: int = 4096
     audio_specialtokens: int = 64
-    code_layer: int = 7
+    code_layer: int = 3
+    emotion_bins: int = 100
 
     padded_text_vocabsize: int = field(init=False)
     padded_audio_vocabsize: int = field(init=False)
     total_audio_vocabsize: int = field(init=False)
     total_vocabsize: int = field(init=False)
+    emotion_token_start: int = field(init=False)
+    emotion_token_count: int = field(init=False)
 
     eot: int = field(init=False)   # end of text token
     pad_t: int = field(init=False) # padding text token
@@ -29,7 +32,10 @@ class VocabConfig:
     split: int = field(init=False) # split token
 
     def __post_init__(self):
-        self.padded_text_vocabsize = self.text_vocabsize + self.text_specialtokens
+        # self.padded_text_vocabsize = self.text_vocabsize + self.text_specialtokens
+        self.emotion_token_count = self.emotion_bins * 2
+        self.emotion_token_start = self.text_vocabsize + self.text_specialtokens
+        self.padded_text_vocabsize = self.text_vocabsize + self.text_specialtokens + self.emotion_token_count
         self.padded_audio_vocabsize = self.audio_vocabsize + self.audio_specialtokens
         self.total_audio_vocabsize = self.padded_audio_vocabsize * self.code_layer
         self.total_vocabsize = self.padded_text_vocabsize + self.total_audio_vocabsize
@@ -70,7 +76,7 @@ class TTSAdapterConfig:
 
 @dataclass
 class ModelConfig:
-    file: str = "examples/tts/model/slam_model_tts.py:model_factory"
+    file: str = "examples/tts/model/slam_model_tts_3.py:model_factory"
     llm_name: str = "vicuna-13b-v1.5"
     llm_path: str = "PATH/to/LLAMA/7B"
     llm_type: str = "decoder_only"
@@ -187,6 +193,14 @@ class TrainConfig:
     freeze_emotion_predictor: bool = field(default=False, metadata={
         "help": "Whether to freeze emotion predictor in stage 2"})
     # =============================================================================
+    use_emotion_token_loss: bool = field(default=True, metadata={
+        "help": "Whether to use emotion token loss when predicting discrete emotion tokens"})
+    emotion_token_loss_weight: float = field(default=5.0, metadata={
+        "help": "Weight A for emotion token CE loss"})
+    audio_token_loss_weight: float = field(default=1.0, metadata={
+        "help": "Weight B for audio token next-token loss"})
+    shuffle_train: bool = field(default=True, metadata={
+    "help": "Whether to shuffle training data order (set false to keep dataset order)"})
 
 @dataclass
 class DataConfig:
@@ -216,6 +230,9 @@ class DataConfig:
     do_layershift: bool = True
     use_emo: bool = False
     use_text_stream: bool = True
+    # modeling_paradigm: str = field(default="serial", metadata={
+    #     "help": "alternative: interleaved"
+    # })
     modeling_paradigm: str = field(default="parallel", metadata={
         "help": "alternative: interleaved"
     })
@@ -224,6 +241,8 @@ class DataConfig:
     # =============================================================================
     load_emotion_label: bool = field(default=True, metadata={
         "help": "Whether to load emotion labels (arousal, valence) from dataset"})
+    use_emotion_tokens: bool = field(default=True, metadata={
+        "help": "Whether to map emotion labels to discrete tokens and prepend to text labels"})
     # =============================================================================
 
 

@@ -17,6 +17,10 @@ class Linear_GroupDecodeAdapter(nn.Module):
 
 def setup_group_decode_adapter(model_config, train_config, **kwargs):
     audio_vocab_size = model_config.vocab_config.total_audio_vocabsize
+    if hasattr(model_config.vocab_config, "total_vocabsize") and hasattr(model_config.vocab_config, "padded_text_vocabsize"):
+        derived_audio_vocab = model_config.vocab_config.total_vocabsize - model_config.vocab_config.padded_text_vocabsize
+        if derived_audio_vocab > 0:
+            audio_vocab_size = derived_audio_vocab
     code_layer = model_config.vocab_config.code_layer
     
     if model_config.group_decode_adapter_type == "linear":

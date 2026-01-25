@@ -12,7 +12,7 @@ llm_path=/root/autodl-tmp/EmoVoice/checkpoint/Qwen2.5-0.5B
 codec_decoder_path=/root/autodl-tmp/EmoVoice/checkpoint/ckpts/CosyVoice/CosyVoice-300M-SFT
 ckpt_path=/root/autodl-tmp/EmoVoice/checkpoint 
 split=test
-val_data_path=/root/autodl-tmp/data/EmoVoice-DB-Raw/test.jsonl
+val_data_path=/root/autodl-tmp/data/Data_preprocess/LJSpeech/LJSpeech_data.jsonl
 
 # vocabulary settings
 code_layer=3            # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 

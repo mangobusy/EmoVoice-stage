@@ -89,6 +89,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
             total_acc = 0.0
             total_audio_acc = 0.0
             total_length = len(train_dataloader)//gradient_accumulation_steps
+            # breakpoint()
             pbar = tqdm(colour="blue", desc=f"Training Epoch: {epoch+1}", total=total_length, dynamic_ncols=True)
             for step, batch in enumerate(train_dataloader):
                 for key in batch.keys():
@@ -136,10 +137,22 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         layer_loss = [0]
 
                 loss = outputs.loss
-
+                print(rest)
+                print("loss:", loss.item())
+                print(layer_loss)
+                breakpoint()
                 loss = loss / gradient_accumulation_steps
                 # 处理 layer_loss (List) 的平均
-                if isinstance(layer_loss, list):
+                emotion_acc = None
+                if isinstance(layer_loss, dict):
+                    emotion_acc = layer_loss.get("emotion_acc")
+                    layer_loss_values = layer_loss.get("layer_loss")
+                    if isinstance(layer_loss_values, list):
+                        layer_loss_values = [l / gradient_accumulation_steps for l in layer_loss_values]
+                        layer_loss["layer_loss"] = layer_loss_values
+                    if emotion_acc is not None:
+                        layer_loss["emotion_acc"] = emotion_acc / gradient_accumulation_steps
+                elif isinstance(layer_loss, list):
                     layer_loss = [l / gradient_accumulation_steps for l in layer_loss]
                 # layer_loss = [l / gradient_accumulation_steps for l in layer_loss]
                 # acc = acc / gradient_accumulation_steps
@@ -165,14 +178,24 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                     else:
                         # Stage 2 Logs
                         log_dict["train_inner/train_inner_loss"] = loss
+                        log_dict["train_inner/total_loss"] = loss
                         log_dict["train_inner/train_inner_text_accuracy"] = acc
                         for layer, a_acc in enumerate(audio_acc):
                             log_dict[f"train_inner/train_inner_audio_accuracy_layer{layer}"] = a_acc
-                        
-                        if isinstance(layer_loss, list) and len(layer_loss) > 1:
-                            for layer, l in enumerate(layer_loss[:-1]):
+                        if audio_acc:
+                            log_dict["train_inner/audio_acc"] = audio_acc[0]
+
+                        layer_loss_values = layer_loss.get("layer_loss") if isinstance(layer_loss, dict) else layer_loss
+                        if isinstance(layer_loss_values, list) and len(layer_loss_values) > 1:
+                            log_dict["train_inner/train_inner_audio_loss"] = sum(layer_loss_values[:-1])
+                            log_dict["train_inner/train_inner_emotion_loss"] = layer_loss_values[-1]
+                            log_dict["train_inner/audio_loss"] = sum(layer_loss_values[:-1])
+                            log_dict["train_inner/emo_loss"] = layer_loss_values[-1]
+                            for layer, l in enumerate(layer_loss_values[:-1]):
                                 log_dict[f"train_inner/train_inner_audio_loss_layer{layer}"] = l
-                            log_dict[f"train_inner/train_inner_text_loss"] = layer_loss[-1]
+                            log_dict[f"train_inner/train_inner_text_loss"] = layer_loss_values[-1]
+                        if isinstance(layer_loss, dict) and layer_loss.get("emotion_acc") is not None:
+                            log_dict["train_inner/emo_acc"] = layer_loss["emotion_acc"]
 
                     if train_config.enable_fsdp or train_config.enable_ddp:
                         if rank == 0:
@@ -247,7 +270,29 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                 if stage == 1:
                     desc_str = f"Epoch: {epoch+1}, step {step}/{len(train_dataloader)} (loss: {loss.detach().float():.4f}, MAE: {acc:.4f})"
                 else:
-                    desc_str = f"Epoch: {epoch+1}, step {step}/{len(train_dataloader)} (loss: {loss.detach().float():.4f}, audio_acc: {audio_acc[0]:.4f}, text_acc: {acc:.4f})"
+                    use_emotion_token_loss = getattr(train_config, "use_emotion_token_loss", False)
+                    layer_loss_values = layer_loss.get("layer_loss") if isinstance(layer_loss, dict) else layer_loss
+                    emotion_acc_value = None
+                    if isinstance(layer_loss, dict):
+                        emotion_acc_value = layer_loss.get("emotion_acc")
+                    if use_emotion_token_loss and isinstance(layer_loss_values, list) and len(layer_loss_values) > 1:
+                        audio_loss_value = sum(layer_loss_values[:-1])
+                        emotion_loss_value = layer_loss_values[-1]
+                        emotion_acc_value = emotion_acc_value if emotion_acc_value is not None else acc
+                        if hasattr(audio_loss_value, "item"):
+                            audio_loss_value = audio_loss_value.item()
+                        if hasattr(emotion_loss_value, "item"):
+                            emotion_loss_value = emotion_loss_value.item()
+                        if hasattr(emotion_acc_value, "item"):
+                            emotion_acc_value = emotion_acc_value.item()
+                        desc_str = (
+                            f"Epoch: {epoch+1}, step {step}/{len(train_dataloader)} "
+                            f"(loss: {loss.detach().float():.4f}, audio_loss: {audio_loss_value:.4f}, "
+                            f"emo_loss: {emotion_loss_value:.4f}, audio_acc: {audio_acc[0]:.4f}, "
+                            f"emo_acc: {emotion_acc_value:.4f})"
+                        )
+                # else:
+                #     desc_str = f"Epoch: {epoch+1}, step {step}/{len(train_dataloader)} (loss: {loss.detach().float():.4f}, audio_acc: {audio_acc[0]:.4f}, text_acc: {acc:.4f})"
                 # pbar.set_description(f"Training Epoch: {epoch+1}/{train_config.num_epochs}, step {step}/{len(train_dataloader)} completed (loss: {loss.detach().float():.4f}, audio_acc: {audio_acc[0]:.4f}, text_acc: {acc:.4f})")
                 pbar.set_description(desc_str)
 

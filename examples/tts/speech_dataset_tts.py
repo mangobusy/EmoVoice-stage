@@ -4,6 +4,7 @@ import copy
 import torch
 import numpy as np
 from utils.codec_utils import layershift, simple_shift, get_single_layer_answer_token, get_group_answer_token
+from utils.emotion_tokens import emotion_tokens_from_values
 
 class SpeechDatasetJsonl(torch.utils.data.Dataset):
     def __init__(self,
@@ -56,6 +57,9 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         self.special_token_a = self._answer_a
         self.special_token_t = self._answer_t
         self.num_latency_tokens = dataset_config.get("num_latency_tokens", 0)
+        self.use_emotion_tokens = dataset_config.get("use_emotion_tokens", False)
+        self.emotion_token_start = self.vocab_config.emotion_token_start
+        self.emotion_token_count = self.vocab_config.emotion_token_count
 
         # layershift config
         self.do_layershift = dataset_config.get("do_layershift", True)
@@ -195,7 +199,7 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         # [MODIFIED] 提取情绪标签
         emotion_labels = None
         if self.load_emotion_label:
-            # 假设数据中 "emotions" 字段为 [Arousal, Valence]
+            # 假设数据中 "emotions" 字段为 [Valence, Arousal]
             emotion_labels = data_dict.get("emotion", [0.0, 0.0])
         # ===================================================================================
 
@@ -259,21 +263,35 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         answer_text_ids = self.tokenizer.encode(answer_text)  # [answer]
         answer_text_ids.append(self._eot) # [answer,eos]
         answer_text_ids = torch.tensor(answer_text_ids, dtype=torch.int64)
-
+        emotion_token_ids = []
+        if self.use_emotion_tokens and emotion_labels is not None:
+            # print("True")
+            valence, arousal = emotion_labels
+            # print("Valence, Arousal:", valence, arousal)
+            emotion_token_ids = emotion_tokens_from_values(valence, arousal, self.vocab_config)
+            # print("emotion_token_ids:", emotion_token_ids) # emotion token
+            emotion_token_ids = torch.tensor(emotion_token_ids, dtype=torch.int64)
+            answer_text_ids = torch.cat((emotion_token_ids, answer_text_ids), dim=0)
+        emotion_token_len = len(emotion_token_ids)
+        # print("emotion_token_len:", emotion_token_len) # 2
+        # breakpoint()
         if self.modeling_paradigm == "parallel":
-            answer_length = max(len(answer_text_ids), target_audio_length)
+            answer_audio_length = target_audio_length + emotion_token_len
+            answer_length = max(len(answer_text_ids), answer_audio_length)
             answer_ids = self.get_answer_ids(answer_length)                 # NOTE: somtimes answer_text_ids is longer than target_audio_length 
             if self.dataset_config.get("use_text_stream","True"):
                 answer_ids[self.code_layer] = torch.cat((answer_text_ids.unsqueeze(0), answer_ids[self.code_layer][:,len(answer_text_ids):]),dim=1)     # [answer_text,eos]
-            text_padding_length = target_audio_length - len(answer_text_ids)
+            text_padding_length = answer_audio_length - len(answer_text_ids)
 
             labels_ids = copy.deepcopy(answer_ids)
             ori_example_ids = copy.deepcopy(example_ids)
             
             if target_audio is not None:    
                 for i in range(self.code_layer):
-                    labels_ids[i] = torch.cat((target_audio[i].unsqueeze(0), answer_ids[i][:,target_audio_length:]), dim=1)
-                    answer_ids[i] = torch.cat((self.layershift(target_audio[i], i).unsqueeze(0), labels_ids[i][:,target_audio_length:]), dim=1)
+                    audio_prefix = torch.full((emotion_token_len,), self._pad_a, dtype=target_audio[i].dtype)
+                    audio_tokens = torch.cat((audio_prefix, target_audio[i]), dim=0)
+                    labels_ids[i] = torch.cat((audio_tokens.unsqueeze(0), answer_ids[i][:,audio_tokens.shape[0]:]), dim=1)
+                    answer_ids[i] = torch.cat((self.layershift(audio_tokens, i).unsqueeze(0), labels_ids[i][:,audio_tokens.shape[0]:]), dim=1)
             for i in range(self.code_layer + 1):
                 example_ids[i] = torch.cat((ori_example_ids[i], answer_ids[i]), dim=1)  # [prompt,audio,answer,eos]
                 labels_ids[i] = torch.cat((ori_example_ids[i], labels_ids[i]), dim=1)
@@ -281,7 +299,10 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
             example_ids = torch.stack(example_ids).squeeze()
             labels_ids = torch.stack(labels_ids).squeeze()
             labels_ids[:,:input_length + prompt_length + 3] = -1  # [-1,-1,answer,eos]; NOTE: here 3 include <bos> <eos> <ans_t>
-
+            if emotion_token_len > 0:
+                answer_start = input_length + prompt_length + 3
+                labels_ids[:self.code_layer, answer_start:answer_start + emotion_token_len] = -1
+                
             if text_padding_length > 0:
                 labels_ids[self.code_layer,-text_padding_length:] = -1   # [-1,-1,answer_text,eos,-1]
             else:

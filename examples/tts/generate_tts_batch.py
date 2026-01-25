@@ -15,6 +15,7 @@ print(sys.path)
 from slam_llm.utils.model_utils import get_custom_model_factory
 from slam_llm.utils.dataset_utils import get_preprocessed_dataset
 from utils.codec_utils import audio_decode_cosyvoice
+from utils.emotion_tokens import split_emotion_tokens, emotion_values_from_tokens
 
 @hydra.main(config_name=None, version_base=None)
 def main_hydra(cfg: DictConfig):
@@ -146,9 +147,10 @@ def main(kwargs: DictConfig):
 			for key in batch.keys():
 				batch[key] = batch[key].to(device) if isinstance(batch[key], torch.Tensor) else batch[key]
 
-			audio_prompt_path = batch["neutral_speaker_wav"][0]
+			# audio_prompt_path = batch["neutral_speaker_wav"][0]
+			audio_prompt_path = "/root/autodl-tmp/data/EmoVoice-DB-Raw/audio/neutral/gpt4o_6000_neutral_verse.wav"
 			# =======================================================================================
-			audio_prompt_path = "/root/autodl-tmp/data/EmoVoice-DB-Raw/"+audio_prompt_path
+			# audio_prompt_path = "/root/autodl-tmp/data/EmoVoice-DB-Raw/"+audio_prompt_path
 			# =======================================================================================
 
 			start_time = time.time()
@@ -156,7 +158,8 @@ def main(kwargs: DictConfig):
 				model_outputs = model.generate(**batch, **decode_config)
 			elif modeling_paradigm == "serial":
 				model_outputs = model.serial_generate(**batch, **decode_config)
-
+			print("model_outputs:", model_outputs)
+			print("model_outputs shape", len(model_outputs))
 			if modeling_paradigm == "parallel" or modeling_paradigm == "serial":
 				text_outputs = model_outputs[code_layer]
 				audio_outputs = model_outputs[:code_layer]
@@ -167,7 +170,20 @@ def main(kwargs: DictConfig):
 				raise NotImplementedError
 			end_time_llm = time.time()
 			logger.info(f"LLM Inference Time: {end_time_llm - start_time:.2f}s")
-			output_text = model.tokenizer.decode(text_outputs, add_special_tokens=False, skip_special_tokens=True)
+			# output_text = model.tokenizer.decode(text_outputs, add_special_tokens=False, skip_special_tokens=True)
+			decoded_emotion = None
+			text_token_list = text_outputs.tolist() if isinstance(text_outputs, torch.Tensor) else list(text_outputs)
+			# print("text_token_list:", text_token_list)
+			if dataset_config.use_emotion_tokens:
+				emotion_tokens, text_token_list = split_emotion_tokens(text_token_list, model_config.vocab_config)
+				# print("emotion_tokens:", emotion_tokens)
+				# print("text_token_list after split:", text_token_list)
+				if emotion_tokens:
+					decoded_emotion = emotion_values_from_tokens(emotion_tokens, model_config.vocab_config)
+					logger.info(f"Predicted Emotion [V, A]: {decoded_emotion}")
+			output_text = model.tokenizer.decode(text_token_list, add_special_tokens=False, skip_special_tokens=True)
+			# print("output_text:", output_text)
+			# breakpoint()
 			for key, source_text, target_text, generated_text in zip(batch["keys"], batch["source_texts"], batch["target_texts"], [output_text]):
 				q.write(key + "\t" + source_text + "\n")
 				if "chuanxing" in dataset_config.val_data_path:
