@@ -104,15 +104,12 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                             for k2 in batch[key].keys():
                                 batch[key][k2] = batch[key][k2].to('cuda:0') if isinstance(batch[key][k2], torch.Tensor) else batch[key][k2]
                 with autocast():
-                    outputs, *rest = model(**batch)
+                    outputs, *rest = model(**batch) # output(loss,logit,...)   *rest[text_acc, audio_acc, loss_recorder]
+                    # print(*rest)                                                                     # loss_recorder[layer_loss, emotion_acc]
+                    # breakpoint()                                                                         
+
                 # ==================== 分阶段解包逻辑 START ====================
-                if stage == 1:
-                    # Stage 1: Emotion Prediction
-                    # 假设模型返回: model_outputs, emotion_pred, [emotion_mae], [emotion_loss, emotion_mae]
-                    # rest[0]: emotion_pred (Tensor) - 忽略
-                    # rest[1]: [emotion_mae] (List of float) 或 scalar
-                    # rest[2]: loss_recorder [mse, mae]
-                    
+                if stage == 1:                    
                     if len(rest) > 2:
                         layer_loss = rest[2] # [mse, mae]
                         # 兼容处理：如果 rest[1] 是列表取第一个，如果是标量直接用
@@ -137,10 +134,10 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         layer_loss = [0]
 
                 loss = outputs.loss
-                print(rest)
-                print("loss:", loss.item())
-                print(layer_loss)
-                breakpoint()
+                # print(rest)
+                # print("loss:", loss.item())
+                # print(layer_loss)
+                # breakpoint()
                 loss = loss / gradient_accumulation_steps
                 # 处理 layer_loss (List) 的平均
                 emotion_acc = None
@@ -177,25 +174,20 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                             log_dict["train_inner/emotion_mae_raw"] = layer_loss[1]
                     else:
                         # Stage 2 Logs
-                        log_dict["train_inner/train_inner_loss"] = loss
-                        log_dict["train_inner/total_loss"] = loss
-                        log_dict["train_inner/train_inner_text_accuracy"] = acc
+                        log_dict["Total Loss"] = loss
+                        log_dict["Text Accuracy"] = acc
                         for layer, a_acc in enumerate(audio_acc):
-                            log_dict[f"train_inner/train_inner_audio_accuracy_layer{layer}"] = a_acc
-                        if audio_acc:
-                            log_dict["train_inner/audio_acc"] = audio_acc[0]
+                            log_dict[f"Audio Accuracy (layer{layer})"] = a_acc
 
                         layer_loss_values = layer_loss.get("layer_loss") if isinstance(layer_loss, dict) else layer_loss
                         if isinstance(layer_loss_values, list) and len(layer_loss_values) > 1:
-                            log_dict["train_inner/train_inner_audio_loss"] = sum(layer_loss_values[:-1])
-                            log_dict["train_inner/train_inner_emotion_loss"] = layer_loss_values[-1]
-                            log_dict["train_inner/audio_loss"] = sum(layer_loss_values[:-1])
-                            log_dict["train_inner/emo_loss"] = layer_loss_values[-1]
+                            log_dict["Audio Loss"] = sum(layer_loss_values[:-1])
+                            log_dict["Emotion Loss"] = layer_loss_values[-1]
+                            
                             for layer, l in enumerate(layer_loss_values[:-1]):
-                                log_dict[f"train_inner/train_inner_audio_loss_layer{layer}"] = l
-                            log_dict[f"train_inner/train_inner_text_loss"] = layer_loss_values[-1]
+                                log_dict[f"Audio Loss (layer{layer})"] = l
                         if isinstance(layer_loss, dict) and layer_loss.get("emotion_acc") is not None:
-                            log_dict["train_inner/emo_acc"] = layer_loss["emotion_acc"]
+                            log_dict["Emotion Accuracy"] = layer_loss["emotion_acc"]
 
                     if train_config.enable_fsdp or train_config.enable_ddp:
                         if rank == 0:
@@ -224,8 +216,14 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                     '''
                 total_loss += loss.detach().float()
                 total_acc += acc # text_acc
-                total_audio_acc += audio_acc[0]
+                # print("audio_acc:",audio_acc)
+                # print("audio_acc[0]:",audio_acc[0])
+                # print("audio_acc[1]:",audio_acc[1])
+                # print("audio_acc[2]:",audio_acc[2])
+                total_audio_acc = audio_acc[0]+audio_acc[1]+audio_acc[2]
+                # total_audio_acc += audio_acc[0]
                 if train_config.use_fp16:
+                    # breakpoint()
                     # if fp16 is enabled, use gradient scaler to handle gradient update
                     scaler.scale(loss).backward()
                     if (step + 1) % gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
@@ -241,9 +239,9 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         if log_config.use_wandb and step % log_config.log_interval == 0:
                             if train_config.enable_fsdp or train_config.enable_ddp:
                                 if rank==0:
-                                    wandb.log({"train_inner/lr":current_lr}, step=(epoch * total_length + step))
+                                    wandb.log({"lr":current_lr}, step=(epoch * total_length + step))
                             else:
-                                wandb.log({"train_inner/lr":current_lr}, step=(epoch * total_length + step))
+                                wandb.log({"lr":current_lr}, step=(epoch * total_length + step))
                         optimizer.zero_grad()
                         pbar.update(1)
                 else:
@@ -261,9 +259,9 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         if log_config.use_wandb and step % log_config.log_interval == 0:
                             if train_config.enable_fsdp or train_config.enable_ddp:
                                 if rank==0:
-                                    wandb.log({"train_inner/lr":current_lr}, step=(epoch * total_length + step))
+                                    wandb.log({"lr":current_lr}, step=(epoch * total_length + step))
                             else:
-                                wandb.log({"train_inner/lr":current_lr}, step=(epoch * total_length + step))
+                                wandb.log({"lr":current_lr}, step=(epoch * total_length + step))
                         optimizer.zero_grad()
                         pbar.update(1)
                 # 更新进度条描述
@@ -289,6 +287,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                             f"Epoch: {epoch+1}, step {step}/{len(train_dataloader)} "
                             f"(loss: {loss.detach().float():.4f}, audio_loss: {audio_loss_value:.4f}, "
                             f"emo_loss: {emotion_loss_value:.4f}, audio_acc: {audio_acc[0]:.4f}, "
+                            f"text_acc: {acc:.4f},"
                             f"emo_acc: {emotion_acc_value:.4f})"
                         )
                 # else:
@@ -298,6 +297,9 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
 
                 if (epoch * total_length + step + 1) % train_config.validation_interval == 0 and train_config.run_validation:
                     eval_ppl, eval_epoch_loss, *rest = evaluation(model, train_config, eval_dataloader, local_rank, tokenizer)
+                    print("eval_ppl:",eval_ppl)
+                    print("eval_epoch_loss:",eval_epoch_loss)
+                    print("*rest:",*rest)
                     # ====================================================
                     if stage == 1:
                         # Stage 1: eval_acc 用作 MAE
@@ -548,7 +550,7 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         logger.info(f"Epoch {epoch+1}: ppl={train_perplexity:.4f}, loss={train_epoch_loss:.4f}, acc={train_epoch_acc:.4f}, time {epoch_end_time}s")
                     # wandb.log({"train/train_perplexity":train_perplexity, "train/train_epoch_loss":train_epoch_loss, "train/train_epoch_acc":train_epoch_acc, "train/train_epoch_audio_acc":train_epoch_audio_acc})
             else:
-                wandb.log({"train/train_perplexity":train_perplexity, "train/train_epoch_loss":train_epoch_loss, "train/train_epoch_acc":train_epoch_acc, "train/train_epoch_audio_acc":train_epoch_audio_acc})
+                wandb.log({"train_perplexity":train_perplexity, "train_epoch_loss":train_epoch_loss, "train_epoch_text_acc":train_epoch_acc, "train_epoch_audio_acc":train_epoch_audio_acc})
 
         if train_config.enable_fsdp or train_config.enable_ddp:
             if rank==0:
@@ -644,7 +646,7 @@ def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
                 else:
                     # Stage 2 Evaluation (Generation)
                     acc = rest[0] if rest else -1 
-                    audio_acc = rest[1][0] if rest else -1
+                    audio_acc = (rest[1][0]+rest[1][1]+rest[1][2]) if rest else -1
                     eval_acc += acc
                     eval_audio_acc += audio_acc
                     

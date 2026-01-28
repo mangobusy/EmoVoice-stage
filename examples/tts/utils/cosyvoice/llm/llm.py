@@ -17,7 +17,7 @@ from torch import nn
 import torch.nn.functional as F
 from transformers import Qwen2ForCausalLM
 from torch.nn.utils.rnn import pad_sequence, unpad_sequence
-from cosyvoice.utils.common import IGNORE_ID
+from cosyvoice.utils.common import IGNORE_ID, ras_sampling
 from cosyvoice.transformer.label_smoothing_loss import LabelSmoothingLoss
 from cosyvoice.utils.common import th_accuracy
 
@@ -32,7 +32,7 @@ class TransformerLM(torch.nn.Module):
             speech_token_size: int,
             text_encoder: torch.nn.Module,
             llm: torch.nn.Module,
-            sampling: Callable,
+            sampling: Callable = ras_sampling,
             length_normalized_loss: bool = True,
             lsm_weight: float = 0.0,
             spk_embed_dim: int = 192,
@@ -246,7 +246,7 @@ class Qwen2LM(torch.nn.Module):
             llm_output_size: int,
             speech_token_size: int,
             llm: torch.nn.Module,
-            sampling: Callable,
+            sampling: Callable = ras_sampling,
             length_normalized_loss: bool = True,
             lsm_weight: float = 0.0,
     ):

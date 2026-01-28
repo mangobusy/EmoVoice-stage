@@ -9,12 +9,12 @@ import torch
 
 '''
 python examples/tts/decode_audio_tokens.py \
-  --jsonl /root/autodl-tmp/data/Data_preprocess/test_tokenizer.jsonl \
-  --output-dir /root/autodl-tmp/data/Data_preprocess/test_tokenizer \
-  --codec-decoder-path /root/autodl-tmp/EmoVoice/checkpoint/ckpts/CosyVoice/CosyVoice-300M-SFT \
-  --audio-prompt-path /root/autodl-tmp/data/EmoVoice-DB-Raw/audio/neutral/gpt4o_6000_neutral_verse.wav \
+  --jsonl /data/Shizihui/Data_preprocess/test_tokenizer.jsonl \
+  --output-dir /data/Shizihui/Data_preprocess/test_tokenizer \
+  --codec-decoder-path /data/Shizihui/Data_preprocess/ckp/CosyVoice-300M \
+  --audio-prompt-path /data/Shizihui/EmoVoice/audios/EN/neutral/gpt4o_14699_neutral_verse.wav \
   --token-field answer_cosyvoice_speech_token \
-  --code-layer 1 \
+  --code-layer 3 \
   --num-latency-tokens 0 \
   --ensure-eoa
 '''
@@ -83,7 +83,7 @@ def main() -> None:
     parser.add_argument("--codec-decoder-path", required=True, help="Path to CosyVoice decoder checkpoint directory.")
     parser.add_argument("--cosyvoice-version", type=int, default=1, choices=[1, 2], help="CosyVoice version.")
     parser.add_argument("--audio-prompt-path", required=True, help="Prompt wav used by CosyVoice decoder.")
-    parser.add_argument("--code-layer", type=int, default=1, help="Number of codec layers in the token stream.")
+    parser.add_argument("--code-layer", type=int, default=3, help="Number of codec layers in the token stream.")
     parser.add_argument("--num-latency-tokens", type=int, default=0, help="Latency tokens prepended to the stream.")
     parser.add_argument("--sample-rate", type=int, default=24000, help="Output sample rate.")
     parser.add_argument("--speed", type=float, default=1.0, help="Speed factor for decoding.")

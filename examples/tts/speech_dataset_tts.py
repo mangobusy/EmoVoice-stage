@@ -102,7 +102,7 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         if self.code_layer == 0:
             input_ids_item = []
             input_ids_item.append(self.layershift(self._input_a, 0))
-            input_ids_item += [self.layershift(self._pad_a, 0)] * length
+            input_ids_item += [self.layershift(self._pad_a, 0)] * length            
             input_ids_item += [(self.layershift(self._eoa, 0)), self.layershift(special_token_a, 0)]
             input_ids = torch.tensor(input_ids_item).unsqueeze(0).unsqueeze(0)
             return input_ids
@@ -110,21 +110,32 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         for i in range(self.code_layer):
             input_ids_item = []
             input_ids_item.append(self.layershift(self._input_a, i))
+            # print("self._input_a:", self._input_a)
+            # print("input_ids_item add input_a:", input_ids_item)
             input_ids_item += [self.layershift(self._pad_a, i)] * length
+            # print("input_ids_item add pad_a:", input_ids_item)
             input_ids_item += [(self.layershift(self._eoa, i)), self.layershift(special_token_a, i)]
+            # print("special_token_a (answer_a):", special_token_a)
+            # print("input_ids_item add eoa and special_token_a(answer_a):", input_ids_item)
             input_ids.append(torch.tensor(input_ids_item).unsqueeze(0))
+            # print("input_ids:", input_ids)
         input_id_T = torch.tensor([self._input_t] + [self._pad_t] * length + [self._eot, special_token_t])
+        # print("input_id_T:",input_id_T)
         input_ids.append(input_id_T.unsqueeze(0))
         return input_ids
 
     def get_padded_input(self, text_input_idx, text_index_length):
         padded_input = []
         for i in range(self.code_layer):
+            # print("self._pad_a:", self._pad_a)
             padded_input_item = [self.layershift(self._pad_a, i)] * text_index_length
+            # print("padded_input_item before:", padded_input_item)
             padded_input.append(torch.tensor(padded_input_item).unsqueeze(0))
-        
+        # print("padded_input before final layer:", padded_input)
         final_layer_input = torch.tensor(text_input_idx)
+        # print("final_layer_input:", final_layer_input)
         padded_input.append(final_layer_input.unsqueeze(0))
+        # print("padded_input after final layer:", padded_input)
         return padded_input
 
     def get_answer_ids(self, length):
@@ -205,7 +216,7 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
 
 
         target_audio, target_audio_length = self.extract_audio_feature(target_audio)
-
+        # print("target_audio:", target_audio)
         prompt="Say this sentence. "
         if self.use_emo:
             if "emotion_text_prompt" in data_dict:
@@ -214,27 +225,40 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
                 emotion_text_prompt = re.sub(r'\.(?=.)', ',', emotion_text_prompt)
                 prompt = "Say this sentence with emotion of {}. ".format(emotion_text_prompt)
   
-        prompt = self.prompt_template.format(prompt) #'<SYSTEM>: 请说这句话. \n '
+        prompt = self.prompt_template.format(prompt) #'<SYSTEM>: Say this sentence. \n '
         prompt_ids = self.tokenizer.encode(prompt)
+        # print("prompt_ids:", prompt_ids)
         prompt_ids = [self._input_t] + prompt_ids + [self._eot]
+        # print("prompt_ids 2:", prompt_ids)
         prompt_length = len(prompt_ids)
         prompt_ids = self.get_padded_input(prompt_ids, prompt_length)
-
+        # print("prompt_ids after padding:", prompt_ids)
+        # print("source_text:", source_text)
         target_text_ids = self.tokenizer.encode(source_text)
+        # print("target_text_ids:", target_text_ids)
         target_text_length = len(target_text_ids)
         target_text_ids = torch.tensor(target_text_ids, dtype=torch.int64)
         example_ids = self.get_input_ids(target_text_length, self.special_token_a, self.special_token_t) # <prompt> <bos> <text> <eos> <task>
-        text_layer = example_ids[self.code_layer]
+        # print("example_ids before:", example_ids)
+        text_layer = example_ids[self.code_layer]  # example_ids[3]
+        # print("text_layer before:", text_layer)
+        # print("text_layer shape before:", text_layer.shape)
         text_layer = torch.cat((text_layer[:,:1], target_text_ids.unsqueeze(0), text_layer[:,-2:]), dim=1)
+        # print("text_layer after:", text_layer)
+        # print("text_layer shape after:", text_layer.shape)
         example_ids[self.code_layer] = text_layer
         example_ids = [torch.cat((prompt_ids[i], example_ids[i]), dim = 1) for i in range(self.code_layer + 1)]
+        # print("example_ids after:", example_ids)
         if self.modeling_paradigm == "serial":
             only_text_layer = example_ids[self.code_layer]
             example_ids = []
             for i in range(self.code_layer):
                 example_ids.append(only_text_layer) 
         input_length = target_text_length
-        
+        # print("prompt:", prompt)
+        # print("prompt_ids:", prompt_ids)
+        # print("prompt_length:", prompt_length)
+        # print("example_ids:", example_ids)
         if self.inference_mode:
             example_mask = example_ids[0][0].ge(-1)  # [True,True]
             example_ids = torch.stack(example_ids).squeeze() if torch.stack(example_ids).shape[0]!=1 else torch.stack(example_ids).squeeze(0)
@@ -242,7 +266,7 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         # ===================================================================================
             # [MODIFIED] Inference Mode 返回字典
             ret_dict = {
-                "input_ids": example_ids,
+                "input_ids": example_ids,  # text token
                 "attention_mask": example_mask,
                 "input_length": input_length,
                 "audio_length": audio_length,
@@ -261,7 +285,9 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
 
         answer_text = self.answer_template.format(target_text)
         answer_text_ids = self.tokenizer.encode(answer_text)  # [answer]
-        answer_text_ids.append(self._eot) # [answer,eos]
+        # print("answer_text_ids:", answer_text_ids)
+        answer_text_ids.append(self._eot) # [answer,eot]
+        # print("answer_text_ids add eot:", answer_text_ids)
         answer_text_ids = torch.tensor(answer_text_ids, dtype=torch.int64)
         emotion_token_ids = []
         if self.use_emotion_tokens and emotion_labels is not None:
@@ -272,6 +298,7 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
             # print("emotion_token_ids:", emotion_token_ids) # emotion token
             emotion_token_ids = torch.tensor(emotion_token_ids, dtype=torch.int64)
             answer_text_ids = torch.cat((emotion_token_ids, answer_text_ids), dim=0)
+            # print("answer_text_ids after adding emotion_token_ids:", answer_text_ids)
         emotion_token_len = len(emotion_token_ids)
         # print("emotion_token_len:", emotion_token_len) # 2
         # breakpoint()
@@ -312,24 +339,27 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         elif self.modeling_paradigm == "serial":
             answer_length = len(answer_text_ids) + target_audio_length
             answer_ids = torch.full((self.code_layer, answer_length), -1)
-
+            # print("answer_ids before:", answer_ids)
             labels_ids = copy.deepcopy(answer_ids)
             ori_example_ids = copy.deepcopy(example_ids)
 
             for i in range(self.code_layer):
                 labels_ids[i] = torch.cat( (answer_text_ids.unsqueeze(0), target_audio[i].unsqueeze(0)), dim=1 )
+                # print("labels_ids[{}]:".format(i), labels_ids[i])
                 answer_ids[i] = torch.cat( (answer_text_ids.unsqueeze(0), self.layershift(target_audio[i], i).unsqueeze(0)), dim=1 )
-
+                # print("answer_ids[{}]:".format(i), answer_ids[i])
             example_ids=[]
             whole_labels_ids=[]
             for i in range(self.code_layer):
                 example_ids.append(torch.cat((ori_example_ids[0], answer_ids[i].unsqueeze(0)),dim=1))  # [prompt,audio,answer,eos]
                 whole_labels_ids.append(torch.cat((ori_example_ids[0], labels_ids[i].unsqueeze(0)),dim=1))
-
+            # print("example_ids before stack:", example_ids)
             example_ids = torch.stack(example_ids).squeeze(1)
+            # print("example_ids after stack:", example_ids)
             labels_ids = torch.stack(whole_labels_ids).squeeze(1)
+            # print("labels_ids after stack:", labels_ids)
             labels_ids[:,:input_length + prompt_length + 3] = -1  # [-1,-1,answer,eos]; NOTE: here 3 include <bos> <eos> <ans_t>
-    
+            # breakpoint()
         elif self.modeling_paradigm == "interleaved":
             target_audio = target_audio.squeeze(0)
             example_ids = example_ids[0]

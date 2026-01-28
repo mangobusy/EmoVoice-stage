@@ -19,24 +19,24 @@ class VocabConfig:
     emotion_token_start: int = field(init=False)
     emotion_token_count: int = field(init=False)
 
-    eot: int = field(init=False)   # end of text token
-    pad_t: int = field(init=False) # padding text token
-    input_t: int = field(init=False) # input text token
-    answer_t: int = field(init=False) # answer text token
+    eot: int = field(init=False)   # end of text token  151936
+    pad_t: int = field(init=False) # padding text token 151937
+    input_t: int = field(init=False) # input text token  151938
+    answer_t: int = field(init=False) # answer text token 151939
     asr: int = field(init=False)   # ASR token
 
-    eoa: int = field(init=False)   # end of audio token
-    pad_a: int = field(init=False) # padding audio token
-    input_a: int = field(init=False) # input audio token
-    answer_a: int = field(init=False) # answer audio token
+    eoa: int = field(init=False)   # end of audio token 4096
+    pad_a: int = field(init=False) # padding audio token 4097
+    input_a: int = field(init=False) # input audio token 4098
+    answer_a: int = field(init=False) # answer audio token 4099
     split: int = field(init=False) # split token
 
     def __post_init__(self):
         # self.padded_text_vocabsize = self.text_vocabsize + self.text_specialtokens
         self.emotion_token_count = self.emotion_bins * 2
         self.emotion_token_start = self.text_vocabsize + self.text_specialtokens
-        self.padded_text_vocabsize = self.text_vocabsize + self.text_specialtokens + self.emotion_token_count
-        self.padded_audio_vocabsize = self.audio_vocabsize + self.audio_specialtokens
+        self.padded_text_vocabsize = self.text_vocabsize + self.text_specialtokens + self.emotion_token_count # 151936+64+200=152200
+        self.padded_audio_vocabsize = self.audio_vocabsize + self.audio_specialtokens  # 4096+64=4160
         self.total_audio_vocabsize = self.padded_audio_vocabsize * self.code_layer
         self.total_vocabsize = self.padded_text_vocabsize + self.total_audio_vocabsize
 
@@ -172,7 +172,10 @@ class TrainConfig:
     task_type:str = "TTS"
     freeze_encoder_projector:bool = False
     freeze_group_decode_adapter:bool = False
-    modeling_paradigm:str = field(default="parallel", metadata={
+    # modeling_paradigm:str = field(default="parallel", metadata={
+    #     "help": "alternative: interleaved"
+    # })
+    modeling_paradigm: str = field(default="serial", metadata={
         "help": "alternative: interleaved"
     })
     interleaved_text_token_num: int = 12
@@ -199,6 +202,8 @@ class TrainConfig:
         "help": "Weight A for emotion token CE loss"})
     audio_token_loss_weight: float = field(default=1.0, metadata={
         "help": "Weight B for audio token next-token loss"})
+    text_token_loss_weight: float = field(default=1.0, metadata={
+        "help": "Weight C for text token next-token loss"})
     shuffle_train: bool = field(default=True, metadata={
     "help": "Whether to shuffle training data order (set false to keep dataset order)"})
 
@@ -230,12 +235,12 @@ class DataConfig:
     do_layershift: bool = True
     use_emo: bool = False
     use_text_stream: bool = True
-    # modeling_paradigm: str = field(default="serial", metadata={
-    #     "help": "alternative: interleaved"
-    # })
-    modeling_paradigm: str = field(default="parallel", metadata={
+    modeling_paradigm: str = field(default="serial", metadata={
         "help": "alternative: interleaved"
     })
+    # modeling_paradigm: str = field(default="parallel", metadata={
+    #     "help": "alternative: interleaved"
+    # })
     interleaved_text_token_num: int = 12
     interleaved_audio_token_num: int = 36
     # =============================================================================

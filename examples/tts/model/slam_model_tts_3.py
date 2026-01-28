@@ -128,17 +128,26 @@ class slam_model_tts(slam_model):
     ):
         modality_mask = kwargs.get("modality_mask", None)
         encoder_outs = None
-
+        # print("input_ids shape:", input_ids.shape) # [btz, code_layer, seq_length]
+        # print("input_ids:", input_ids)
         if input_ids is not None: 
-            input_ids[input_ids == -1] = 0  # [btz, code_layer + 1, seq_length]
+            input_ids[input_ids == -1] = 0  
             if hasattr(self.llm.model, "embed_tokens"):
+                # print("Using llm.model.embed_tokens") # yes
                 inputs_embeds = self.llm.model.embed_tokens(input_ids)
             elif hasattr(self.llm.model.model, "embed_tokens"):
+                # print("Using llm.model.model.embed_tokens")
                 inputs_embeds = self.llm.model.model.embed_tokens(input_ids)
             else:
+                # print("No embed_tokens found in llm model")
                 inputs_embeds = self.llm.model.model.model.embed_tokens(input_ids)
-
+        # print("inputs_embeds shape:", inputs_embeds.shape) # [btz, code_layer, seq_length, emb_dim]
+        # print("inputs_embeds:", inputs_embeds)
+        # breakpoint()
         if modality_mask is not None and encoder_outs is not None:
+            print("modality_mask shape:", modality_mask.shape)  
+            print("encoder_outs shape:", encoder_outs.shape)
+            print(self.train_config.modeling_paradigm)
             if self.train_config.modeling_paradigm == "parallel":
                 modality_mask = modality_mask.unsqueeze(1).repeat(1, self.code_layer, 1)  # [btz, code_layer, seq_length]
                 modality_mask_start_indices = (modality_mask == True).float().argmax(dim=2)
@@ -172,54 +181,72 @@ class slam_model_tts(slam_model):
                 raise NotImplementedError
         
         inputs_embeds = torch.mean(inputs_embeds, dim=1)  # [btz, seq_length, emb_dim], average over the code layers
-
+        # print("inputs_embeds after fusion shape:", inputs_embeds.shape) # [btz, seq_length, emb_dim]
+        # print("inputs_embeds after fusion:", inputs_embeds)
         if kwargs.get("inference_mode", False):
             return inputs_embeds, attention_mask
+        
 
         if self.train_config.modeling_paradigm == "serial":
-            temp_labels = labels[:,self.code_layer - 1] if labels is not None else None
+            # print("labels shape:", labels.shape)  # [btz, code_layer, seq_length]
+            # print("labels:", labels) # 把prompt和source text都标为-100，只保留了emotion token, answer text token和audio token
+            temp_labels = labels[:,self.code_layer - 1] if labels is not None else None # 最后一个code layer
+            # print("temp_labels shape:", temp_labels.shape) # [btz, seq_length]
+            # print("temp_labels:", temp_labels)
             model_outputs = self.llm(inputs_embeds=inputs_embeds, attention_mask=attention_mask, labels= temp_labels)    # here we use the text token layer as the target label
-
+            # print("model_outputs logits shape:", model_outputs.logits.shape)  # [btz, seq_length, vocab_size]
+            # print("model_outputs logits:", model_outputs.logits)
+            # print("model_outputs:", model_outputs)
             eot = self.model_config.vocab_config.eot
             text_pad_token = self.model_config.vocab_config.pad_t
             audio_pad_token = self.model_config.vocab_config.pad_a
-            text_labels = torch.full_like(labels, -100)
-            audio_labels = torch.full_like(labels, -100)
-            batch_size, seq_size, length = labels.shape
-            for i in range(batch_size):
-                eot_position = (labels[i, 0] == eot).nonzero(as_tuple=True)[0]
-                eot_pos = eot_position.item()  
-                text_labels[i, :, :eot_pos+1] = labels[i, :, :eot_pos+1]
-                text_labels[i, :, eot_pos+1:] = text_pad_token
+            text_labels = torch.full_like(labels, -100) # [btz, code_layer, seq_length]
+            audio_labels = torch.full_like(labels, -100) # [btz, code_layer, seq_length]
+            batch_size, seq_size, length = labels.shape # [btz, code_layer, seq_length]
+            
 
-                audio_labels[i, :, eot_pos+1:] = labels[i, :, eot_pos+1:]
-                ignore_pos = torch.where(labels[i, 0]!= -100)[0][0].item()
+            for i in range(batch_size):
+                eot_position = (labels[i, 0] == eot).nonzero(as_tuple=True)[0]  # audio和text分界线
+                eot_pos = eot_position.item()  
+                text_labels[i, :, :eot_pos+1] = labels[i, :, :eot_pos+1] # [btz, code_layer, seq_length] 只有prompt + source_text + emotion_token + answer_text部分有值，后面全是-100
+                text_labels[i, :, eot_pos+1:] = text_pad_token  # 把-100改为pad token：151937
+                audio_labels[i, :, eot_pos+1:] = labels[i, :, eot_pos+1:]  # [btz, code_layer, seq_length] 只有audio部分有值，前面全是-100
+                ignore_pos = torch.where(labels[i, 0]!= -100)[0][0].item()  # emotion token前面全部ignore
                 audio_labels[i, :, ignore_pos:eot_pos+1] = audio_pad_token
-            text_labels = text_labels[:, 0, :]
+            text_labels = text_labels[:, 0, :] # 取第一个code layer 
+            # print("text_labels shape:", text_labels.shape) 
+            # print("text_labels:", text_labels)
         else:
             text_labels = labels[:,self.code_layer] if labels is not None else None
             audio_labels = labels[:, :self.code_layer] if labels is not None else None
             model_outputs = self.llm(inputs_embeds=inputs_embeds, attention_mask=attention_mask, labels=text_labels)    # here we use the text token layer as the target label
 
         if self.train_config.modeling_paradigm == "parallel" or self.train_config.modeling_paradigm == "serial":
-            x_ori = model_outputs.logits
-            text_vocab_size = self.model_config.vocab_config.padded_text_vocabsize
-            audio_vocab_size = self.model_config.vocab_config.padded_audio_vocabsize
-            xt = x_ori[..., :text_vocab_size]
+            x_ori = model_outputs.logits # [btz, seq_length, vocab_size]
+            text_vocab_size = self.model_config.vocab_config.padded_text_vocabsize # 152200
+            audio_vocab_size = self.model_config.vocab_config.padded_audio_vocabsize # 4160
+            xt = x_ori[..., :text_vocab_size]  # [btz, seq_length, text_vocab_size=152200]
             xa = []
 
             if self.group_decode_adapter is not None:
-                x_audio_ori = x_ori[..., text_vocab_size:]
-                x_audio = self.group_decode_adapter(x_audio_ori)
+                x_audio_ori = x_ori[..., text_vocab_size:] # [btz, seq_length, audio_vocab_size=4160]
+                x_audio = self.group_decode_adapter(x_audio_ori) # [btz, seq_length, audio_vocab_size*code_layer=4160*3=12480]
                 for i in range(self.code_layer):
                     xa.append(x_audio[..., i * audio_vocab_size : (i + 1) * audio_vocab_size])
+                    # print("xa[{}] shape:".format(i), xa[i].shape)
+                    # xa=[btz, seq_length, audio_vocab_size=4160]*code_layer
             else:
                 for i in range(self.code_layer):
                     xa.append(x_ori[..., text_vocab_size + audio_vocab_size * i : text_vocab_size + audio_vocab_size * (i + 1)])
-
+                    # print("xa[{}] shape:".format(i), xa[i].shape)
+            # breakpoint()
             loss_recorder = []
             total_loss, loss_recorder = self.compute_parallel_loss(xt, text_labels, xa, audio_labels)
+            # print("total_loss:",total_loss)
+            # print("loss_recorder:",loss_recorder)
             model_outputs.loss = total_loss
+            # print("model_outputs.loss:",model_outputs.loss)
+
         elif self.train_config.modeling_paradigm == "interleaved":
             x_ori = model_outputs.logits
         else:
@@ -230,9 +257,14 @@ class slam_model_tts(slam_model):
         if self.metric:
             with torch.no_grad():
                 if self.train_config.modeling_paradigm == "parallel" or self.train_config.modeling_paradigm == "serial":
-                    preds = torch.argmax(xt, -1)
-                    text_acc = compute_accuracy(preds.detach()[:, :-1], text_labels.detach()[:, 1:], ignore_label=-100)
-
+                    preds = torch.argmax(xt, -1)  # [1,132]
+                    # text_acc = compute_accuracy(preds.detach()[:, :-1], text_labels.detach()[:, 1:], ignore_label=-100)
+                    emotion_token_start = self.model_config.vocab_config.emotion_token_start
+                    emotion_token_end = emotion_token_start + self.model_config.vocab_config.emotion_token_count
+                    acc_labels = text_labels.detach().clone()
+                    emotion_mask = (acc_labels >= emotion_token_start) & (acc_labels < emotion_token_end)
+                    acc_labels[emotion_mask] = -100 # emotion token位置改成-100
+                    text_acc = compute_accuracy(preds.detach()[:, :-1], acc_labels[:, 1:], ignore_label=-100)
                     preds_audio = [torch.argmax(xa[i], -1) for i in range(self.code_layer)]
                     audio_acc = [compute_accuracy(preds_audio[i].detach()[:, :-1], audio_labels[:, i, 1:], ignore_label=-100) for i in range(self.code_layer)]
                 elif self.train_config.modeling_paradigm == "interleaved":
@@ -253,7 +285,7 @@ class slam_model_tts(slam_model):
                     loss_recorder = None
                 else:
                     raise NotImplementedError
-
+        # breakpoint()
         return model_outputs, text_acc, audio_acc, loss_recorder
 
     def compute_parallel_loss(self, xt, text_labels, xa, audio_labels):
@@ -268,58 +300,101 @@ class slam_model_tts(slam_model):
         emotion_token_start = self.model_config.vocab_config.emotion_token_start
         emotion_token_end = emotion_token_start + self.model_config.vocab_config.emotion_token_count
         emotion_acc = torch.tensor(0.0, device=xt.device)
-        # print("use_emotion_token_loss:", use_emotion_token_loss) # True
-        # print("emotion_token range:", emotion_token_start, emotion_token_end) # 152000 152200
+        text_token_loss = torch.tensor(0.0, device=xt.device)
+    
         if text_labels is not None:
             if use_emotion_token_loss:
-                shifted_logits = xt[:, :-1, :].reshape(-1, text_vocab_size)
-                shifted_labels = text_labels[:, 1:].reshape(-1)
-                emotion_mask = (shifted_labels >= emotion_token_start) & (shifted_labels < emotion_token_end)
+                shifted_logits = xt[:, :-1, :].reshape(-1, text_vocab_size) # [batch_size*(seq_len-1), text_vocab_size]
+                # print("shifted_logits shape:",shifted_logits.shape)
+                # print("shifted_logits:",shifted_logits)
+                shifted_labels = text_labels[:, 1:].reshape(-1) # [batch_size*(seq_len-1)]
+                # print("shifted_labels shape:",shifted_labels.shape)
+                # print("shifted_labels:",shifted_labels)
+                text_mask = (shifted_labels >= 0) & (shifted_labels < emotion_token_start)
+                # print("text_mask shape:",text_mask.shape)
+                # print("text_mask:",text_mask)
+                if text_mask.any():
+                    masked_text_labels = shifted_labels.clone()
+                    masked_text_labels[~text_mask] = -100
+                    # print("masked_text_labels:",masked_text_labels)
+                    text_token_loss = F.cross_entropy(shifted_logits, masked_text_labels, ignore_index=-100)
+                    # print("text_token_loss:",text_token_loss)
+                else:
+                    text_token_loss = torch.tensor(0.0, device=xt.device)
+                emotion_mask = (shifted_labels >= emotion_token_start) & (shifted_labels < emotion_token_end) # [batch_size*(seq_len-1)] 只有emotion token位置是true，其余false
+                # print("emotion_mask shape:", emotion_mask.shape)  
+                # print("emotion_mask:", emotion_mask)
                 if emotion_mask.any():
-                    emotion_loss = F.cross_entropy(shifted_logits[emotion_mask], shifted_labels[emotion_mask])
-                    emotion_preds = torch.argmax(shifted_logits, dim=-1)
-                    emotion_correct = (emotion_preds == shifted_labels) & emotion_mask
-                    emotion_acc = emotion_correct.float().sum() / emotion_mask.float().sum()
+                    emotion_logits = shifted_logits[emotion_mask] # [2, text_vocab_size]
+                    # print("emotion_logits shape:", emotion_logits.shape)
+                    # print("emotion_logits:", emotion_logits)
+                    emotion_targets = shifted_labels[emotion_mask] # [2]
+                    # print("emotion_targets shape:", emotion_targets.shape)
+                    # print("emotion_targets:", emotion_targets)
+                    emotion_bins = self.model_config.vocab_config.emotion_bins
+                    emotion_split = emotion_token_start + emotion_bins # V和A分界线
+                    # print("emotion_split:", emotion_split)  
+                    valence_mask = emotion_targets < emotion_split  # [2] [True, False]
+                    arousal_mask = ~valence_mask  # [2] [False, True]
+                    loss_values = []
+                    correct = []
+                    valence_preds = None
+                    arousal_preds = None
+                    if valence_mask.any():
+                        valence_logits = emotion_logits[valence_mask, emotion_token_start:emotion_split]  # [1, emotion_bins]
+                        valence_targets = emotion_targets[valence_mask] - emotion_token_start # [1]
+                        loss_values.append(F.cross_entropy(valence_logits, valence_targets))
+                        valence_preds = torch.argmax(valence_logits, dim=-1) + emotion_token_start # [1]
+                        correct.append((valence_preds == emotion_targets[valence_mask]).float())
+                    if arousal_mask.any():
+                        arousal_logits = emotion_logits[arousal_mask, emotion_split:emotion_token_end] # [1, emotion_bins]
+                        arousal_targets = emotion_targets[arousal_mask] - emotion_split # [1]
+                        loss_values.append(F.cross_entropy(arousal_logits, arousal_targets))
+                        arousal_preds = torch.argmax(arousal_logits, dim=-1) + emotion_split # [1]
+                        correct.append((arousal_preds == emotion_targets[arousal_mask]).float())
+                    emotion_loss = torch.stack(loss_values).mean() if loss_values else torch.tensor(0.0, device=xt.device)  # V+A loss average                    
+                    emotion_acc = torch.cat(correct).mean() if correct else torch.tensor(0.0, device=xt.device)
+
                 else:
                     emotion_loss = torch.tensor(0.0, device=xt.device)
-                text_loss = emotion_loss
-                layer_loss[self.code_layer] = text_loss
-                # print("xt.shape:", xt.shape) # [batch_size, seq_len, text_vocab_size]
-                # print("shifted_logits.shape:", shifted_logits.shape)  # [batch_size*(seq_len-1), text_vocab_size]
-                # print("text_labels.shape:", text_labels.shape) # [batch_size, seq_len]
-                # print("shifted_labels min/max:", shifted_labels.min().item(), shifted_labels.max().item())
-                # print("emotion_mask:", emotion_mask)
-                # print('emotion mask shape:', emotion_mask.shape) # [batch_size*(seq_len-1)]
-                # print("number of emotion tokens in batch:", emotion_mask.sum().item())
-                # print("emotion_loss:", emotion_loss)
-                # print("emotion_loss:", emotion_loss.item())
-                # breakpoint()
+                # text_loss = emotion_loss
+                # layer_loss[self.code_layer] = text_loss
+                layer_loss[self.code_layer] = emotion_loss
 
             else:
-                text_loss = F.cross_entropy(xt[:, :-1, :].reshape(-1, text_vocab_size), text_labels[:, 1:].reshape(-1), ignore_index=-100)
-                layer_loss[self.code_layer] = text_loss
+                emotion_loss = F.cross_entropy(xt[:, :-1, :].reshape(-1, text_vocab_size), text_labels[:, 1:].reshape(-1), ignore_index=-100)
+                layer_loss[self.code_layer] = emotion_loss
         else:
-            text_loss = 0
+            emotion_loss = 0
 
         total_audio_loss = 0
         single_audio_loss = 0
         for i in range(self.code_layer):
             if audio_labels[:,i] is not None:
+                # print("xa[i]:",xa[i])
+                # print("xa[i] shape:",xa[i].shape)
+                # print(xa[i][:, :-1, :].reshape(-1, audio_vocab_size))
+                # print("audio_labels shape:",audio_labels.shape)
+                # print("audio_labels:",audio_labels)
+                # print(audio_labels[:, i, 1:].reshape(-1))
                 single_audio_loss = F.cross_entropy(xa[i][:, :-1, :].reshape(-1, audio_vocab_size), audio_labels[:, i, 1:].reshape(-1), ignore_index=-100)
                 layer_loss[i] = single_audio_loss
                 # print("Audio layer {} loss: {},{}".format(i, single_audio_loss, single_audio_loss.item()))
                 total_audio_loss += single_audio_loss
+        # print("layer loss:",layer_loss)
         # print("total_audio_loss:", total_audio_loss)
         # total_loss = (text_loss + total_audio_loss) / (self.code_layer+1)
         if use_emotion_token_loss:
             emotion_weight = getattr(self.train_config, "emotion_token_loss_weight", 1.0)
+            # print("emotion_weight:",emotion_weight)
             audio_weight = getattr(self.train_config, "audio_token_loss_weight", 1.0)
-            total_loss = emotion_weight * text_loss + audio_weight * total_audio_loss
-            return total_loss, {"layer_loss": layer_loss, "emotion_acc": emotion_acc}
+            # print("audio_weight:",audio_weight)
+            text_weight = getattr(self.train_config, "text_token_loss_weight", 1.0)
+            total_loss = emotion_weight * emotion_loss + audio_weight * total_audio_loss + text_token_loss * text_weight
+            # print("total_loss:", total_loss)
+            return total_loss, {"layer_loss": layer_loss, "emotion_acc": emotion_acc} 
         else:
-            total_loss = (text_loss + total_audio_loss) / (self.code_layer+1)
-        # print("total_loss:", total_loss)
-        # breakpoint()
+            total_loss = (emotion_loss + total_audio_loss) / (self.code_layer+1)
         return total_loss, layer_loss
 
 
@@ -540,7 +615,7 @@ class slam_model_tts(slam_model):
         text_end = False     # Track whether text generation has ended
         audio_end = False    # Track whether audio generation has ended
 
-        for step in tqdm(range(max_new_tokens), desc="Generating"):
+        for step in tqdm(range(max_new_tokens), desc="Generating111"):
             if None not in current_tokens:
                 if text_end:
                     if current_tokens[0].item() == eot:

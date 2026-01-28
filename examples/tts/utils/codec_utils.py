@@ -5,6 +5,7 @@ import os
 import torch.nn as nn
 import uuid
 import logging
+from tts_config import VocabConfig
 logger = logging.getLogger(__name__)
 
 def setup_codec(train_config, model_config, **kwargs):
@@ -134,8 +135,9 @@ def audio_decode_cosyvoice(audio_tokens, model_config, codec_decoder, audio_prom
         raise NotImplementedError
     return audio_hat
 
-def layershift(input_id, layer, stride=4160, shift=152000):
+def layershift(input_id, layer, stride=4160, shift=VocabConfig().padded_text_vocabsize):
     return input_id + shift + layer * stride
 
-def simple_shift(input_id, layer, stride=4160, shift=152000):
+def simple_shift(input_id, layer, stride=4160, shift=VocabConfig().padded_text_vocabsize):
+    # print("==================================shift:", shift)
     return input_id + shift

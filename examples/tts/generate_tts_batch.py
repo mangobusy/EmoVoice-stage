@@ -114,6 +114,7 @@ def main(kwargs: DictConfig):
 	gt_path = os.path.join(decode_log_dir, "gt_text")
 	question_path = os.path.join(decode_log_dir, "question_text")
 	generate_audio_dir = os.path.join(decode_log_dir, "pred_audio")
+	emotion_path = os.path.join(decode_log_dir, "pred_emotion")
 
 	tone_dir = "neutral_prompt_speech"
 	tone_audio_dir = os.path.join(generate_audio_dir, tone_dir)
@@ -140,7 +141,7 @@ def main(kwargs: DictConfig):
 
 	logger.info("============== Start {task_type} Inference ==============".format(task_type=task_type))
 
-	with open(pred_path, "w") as pred, open(gt_path, "w") as gt, open(question_path, "w") as q:
+	with open(pred_path, "w") as pred, open(gt_path, "w") as gt, open(question_path, "w") as q, open(emotion_path, "w") as emo:
 		# tbar = tqdm(test_dataloader, desc="Inference", total=len(test_dataloader))
 		for step, batch in enumerate(test_dataloader):
 			# tbar.update(1)
@@ -148,7 +149,7 @@ def main(kwargs: DictConfig):
 				batch[key] = batch[key].to(device) if isinstance(batch[key], torch.Tensor) else batch[key]
 
 			# audio_prompt_path = batch["neutral_speaker_wav"][0]
-			audio_prompt_path = "/root/autodl-tmp/data/EmoVoice-DB-Raw/audio/neutral/gpt4o_6000_neutral_verse.wav"
+			audio_prompt_path = "/data/Shizihui/EmoVoice/audios/EN/neutral/gpt4o_14699_neutral_verse.wav"
 			# =======================================================================================
 			# audio_prompt_path = "/root/autodl-tmp/data/EmoVoice-DB-Raw/"+audio_prompt_path
 			# =======================================================================================
@@ -158,8 +159,8 @@ def main(kwargs: DictConfig):
 				model_outputs = model.generate(**batch, **decode_config)
 			elif modeling_paradigm == "serial":
 				model_outputs = model.serial_generate(**batch, **decode_config)
-			print("model_outputs:", model_outputs)
-			print("model_outputs shape", len(model_outputs))
+			# print("model_outputs:", model_outputs)
+			# print("model_outputs shape", len(model_outputs))
 			if modeling_paradigm == "parallel" or modeling_paradigm == "serial":
 				text_outputs = model_outputs[code_layer]
 				audio_outputs = model_outputs[:code_layer]
@@ -168,12 +169,13 @@ def main(kwargs: DictConfig):
 				audio_outputs = model_outputs["audio"]
 			else:
 				raise NotImplementedError
+			
 			end_time_llm = time.time()
 			logger.info(f"LLM Inference Time: {end_time_llm - start_time:.2f}s")
 			# output_text = model.tokenizer.decode(text_outputs, add_special_tokens=False, skip_special_tokens=True)
 			decoded_emotion = None
 			text_token_list = text_outputs.tolist() if isinstance(text_outputs, torch.Tensor) else list(text_outputs)
-			# print("text_token_list:", text_token_list)
+			
 			if dataset_config.use_emotion_tokens:
 				emotion_tokens, text_token_list = split_emotion_tokens(text_token_list, model_config.vocab_config)
 				# print("emotion_tokens:", emotion_tokens)
@@ -182,8 +184,7 @@ def main(kwargs: DictConfig):
 					decoded_emotion = emotion_values_from_tokens(emotion_tokens, model_config.vocab_config)
 					logger.info(f"Predicted Emotion [V, A]: {decoded_emotion}")
 			output_text = model.tokenizer.decode(text_token_list, add_special_tokens=False, skip_special_tokens=True)
-			# print("output_text:", output_text)
-			# breakpoint()
+			
 			for key, source_text, target_text, generated_text in zip(batch["keys"], batch["source_texts"], batch["target_texts"], [output_text]):
 				q.write(key + "\t" + source_text + "\n")
 				if "chuanxing" in dataset_config.val_data_path:
@@ -191,7 +192,11 @@ def main(kwargs: DictConfig):
 				gt.write(key + "\t" + target_text + "\n")
 				generated_text = generated_text.replace('\n', '')
 				pred.write(key + "\t" + generated_text + "\n")
-				
+				if decoded_emotion is not None:
+					emo.write(key + f"\t{decoded_emotion[0]:.6f}\t{decoded_emotion[1]:.6f}\n")
+				else:
+					emo.write(key + "\tNA\tNA\n")
+
 				logger.info(f"Target Text: {target_text}")
 				logger.info(f"Generated Text: {generated_text}")
 
@@ -206,10 +211,15 @@ def main(kwargs: DictConfig):
 				if audio_outputs[0]==[]:
 					logger.warning(f"Text token never stop")
 					continue				
-
+			# print('audio_outputs:', audio_outputs)
 			for i, key in enumerate(batch["keys"]):
 				audio_tokens = [audio_outputs[layer] for layer in range(code_layer)] if code_layer > 0 else audio_outputs
 				audio_hat = audio_decode_cosyvoice(audio_tokens, model_config, codec_decoder, audio_prompt_path, code_layer, num_latency_tokens, speed=1.0)
+				# print("audio_tokens:", audio_tokens)
+				# print("audio_tokens shapes:", [t.shape for t in audio_tokens])
+				# print("audio_hat:", audio_hat)
+				# print("audio_hat shape:", audio_hat.shape)
+				# breakpoint()
 				if audio_hat == None:
 					logger.info(f"Error in decoding {key}: eoa at start! or No eoa!")
 					continue
@@ -219,10 +229,13 @@ def main(kwargs: DictConfig):
 				end_time = time.time()
 				audio_length = audio_hat.shape[1] / speech_sample_rate
 				RTF = (end_time - start_time) / audio_length
+				print("==============================================================")
 				sf.write(f"{tone_audio_dir}/{key}.wav", audio_hat.squeeze().cpu().numpy(), speech_sample_rate)
+				print("=========================yes==============================")
 				logger.info(f"Generated Audio: {tone_dir}/{key}.wav, audio length: {audio_length:.2f}s, generation time: {end_time - start_time:.2f}s, RTF: {RTF:.2f}")
 				RTF_llm = (end_time_llm - start_time) / audio_length
 				logger.info(f"LLM RTF: {RTF_llm:.2f}")
+				# breakpoint()
 
 	logger.info("============== Inference Finished ==============")
 

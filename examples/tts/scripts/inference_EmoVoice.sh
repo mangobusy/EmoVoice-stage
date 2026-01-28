@@ -1,23 +1,23 @@
 #!/bin/bash
 set -e
-export PYTHONPATH=$PYTHONPATH:/root/autodl-tmp/EmoVoice/src
+export PYTHONPATH=$PYTHONPATH:/data/Shizihui/EmoVoice/src
 export CUDA_VISIBLE_DEVICES=0,1,2
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=1
 export PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT=2
 export CUDA_LAUNCH_BLOCKING=1
 
-code_dir=/root/autodl-tmp/EmoVoice/examples/tts
-llm_path=/root/autodl-tmp/EmoVoice/checkpoint/Qwen2.5-0.5B
-codec_decoder_path=/root/autodl-tmp/EmoVoice/checkpoint/ckpts/CosyVoice/CosyVoice-300M-SFT
-ckpt_path=/root/autodl-tmp/EmoVoice/checkpoint 
+code_dir=/data/Shizihui/EmoVoice/examples/tts
+llm_path=/data/Shizihui/EmoVoice/ckp/Qwen2.5-0.5B
+codec_decoder_path=/data/Shizihui/Data_preprocess/ckp/CosyVoice-300M
+ckpt_path=/data/Shizihui/EmoVoice/ckp 
 split=test
-val_data_path=/root/autodl-tmp/data/Data_preprocess/LJSpeech/LJSpeech_data.jsonl
+val_data_path=/data/Shizihui/Data_preprocess/HiFi_TTS/HiFi_TTS_test_test.jsonl
 
 # vocabulary settings
 code_layer=3            # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 
 total_audio_vocabsize=4160
-total_vocabsize=156160  # 152000 + 4160 Sry: Here is not elegant to set the total_vocabsize manually, I may fix it later :)
+total_vocabsize=156360  # 152000 + 4160 Sry: Here is not elegant to set the total_vocabsize manually, I may fix it later :)
 
 # code settings
 codec_decoder_type=CosyVoice
@@ -31,7 +31,7 @@ group_decode_adapter_type=linear
 # decode config
 text_repetition_penalty=1.2
 audio_repetition_penalty=1.2        # default 1.0, set to 1.2 for reduce silence
-max_new_tokens=3000                 # 3000 for CosyVoice-single
+max_new_tokens=500               # 3000 for CosyVoice-single
 do_sample=false
 top_p=1.0
 top_k=0
@@ -41,7 +41,7 @@ output_text_only=false
 speech_sample_rate=22050
 
 decode_log=$ckpt_path/tts_decode_${split}_rp${repetition_penalty}_seed${dataset_sample_seed}_greedy_kaiyuan
-
+model=/data/Shizihui/EmoVoice/Unified_Training/tts_latest/model.pt
 
 if [ "$decode_text_only" = true ] ; then
     decode_log=$decode_log"_text_only"
@@ -91,7 +91,7 @@ python $code_dir/inference_tts.py \
         ++decode_config.num_latency_tokens=$num_latency_tokens \
         ++decode_config.do_layershift=$do_layershift \
         ++decode_log=$decode_log \
-        ++ckpt_path=$ckpt_path/EmoVoice.pt \
+        ++ckpt_path=$model \
         ++output_text_only=$output_text_only \
         ++speech_sample_rate=$speech_sample_rate \
         ++log_config.log_file=$decode_log/infer.log \

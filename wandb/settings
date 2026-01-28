@@ -1,4 +1,4 @@
 [default]
-disabled = true
-mode = offline
-
+disabled = false
+mode = online
+API_KEY=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

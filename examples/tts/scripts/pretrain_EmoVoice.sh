@@ -1,6 +1,6 @@
 #!/bin/bash
 export PYTHONPATH=$PYTHONPATH:/root/autodl-tmp/EmoVoice/src
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0,1,2
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=1
 

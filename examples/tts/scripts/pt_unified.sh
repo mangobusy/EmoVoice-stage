@@ -1,15 +1,15 @@
 #!/bin/bash
-export PYTHONPATH=$PYTHONPATH:/root/autodl-tmp/EmoVoice/src
+export PYTHONPATH=$PYTHONPATH:/data/Shizihui/EmoVoice/src
 export CUDA_VISIBLE_DEVICES=0,1,2
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=1
 
-code_dir=/root/autodl-tmp/EmoVoice/examples/tts
+code_dir=/data/Shizihui/EmoVoice/examples/tts
 num_gpus_per_node=$(( $(echo ${CUDA_VISIBLE_DEVICES} | tr -cd ',' | wc -c) + 1 ))
 num_nodes=1
 num_gpus=$(( num_gpus_per_node * num_nodes ))
 
-llm_path=/root/autodl-tmp/EmoVoice/checkpoint/Qwen2.5-0.5B
+llm_path=/data/Shizihui/EmoVoice/ckp/Qwen2.5-0.5B
 llm_name=Qwen2.5-0.5b
 llm_dim=896                         # 896 1536 3584 8192  -> 0.5B 1.5B 3B 7B
 
@@ -17,26 +17,28 @@ llm_dim=896                         # 896 1536 3584 8192  -> 0.5B 1.5B 3B 7B
 code_layer=3                        # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 
 total_audio_vocabsize=4160          # the vocab size of the codec token
 llm_vocabsize=152000                # the vocab size of the LLM model (Qwen2 here)
-EMOTION_BINS=200
+EMOTION_BINS=100
 # total_vocabsize=$((total_audio_vocabsize + llm_vocabsize))
 total_vocabsize=$((total_audio_vocabsize + llm_vocabsize + EMOTION_BINS * 2))
 
 EMOTION_LOSS_WEIGHT=5.0
 AUDIO_LOSS_WEIGHT=1.0
+TEXT_LOSS_WEIGHT=1.0
+
 
 # code settings
 num_latency_tokens=0                # number of latency tokens (in front of the generated audio tokens)
 do_layershift=false                 # if false, tokens in each layers use the same codebook, otherwise, use different codebooks
 
 # dataset settings
-train_data_path="/root/autodl-tmp/data/Data_preprocess/StoryTTS/StoryTTS_data.jsonl"
-val_data_path="/root/autodl-tmp/data/Data_preprocess/StoryTTS/StoryTTS_val.jsonl"
+train_data_path="/data/Shizihui/Data_preprocess/HiFi_TTS/HiFi_TTS_train.jsonl"
+val_data_path="/data/Shizihui/Data_preprocess/HiFi_TTS/HiFi_TTS_val.jsonl"
 # train_data_path="/root/autodl-tmp/data/story_audio_w_emotion_tra/MsceneSpeech/MsceneSpeech_train_emotion.jsonl"
 # val_data_path="/root/autodl-tmp/data/VoiceAssistant-400K-v2/val_0.jsonl"
 
 
 # training settings
-batch_size_training=6
+batch_size_training=4
 use_fp16=true
 use_peft=false
 num_epochs=50
@@ -56,12 +58,12 @@ group_decode=true
 group_decode_adapter_type=linear
 
 # log settings
-exp_name="Unified_Training"
+exp_name="UT-hifi"
 
 wandb_entity_name=u03zs21-sun-yat-sen-university
 wandb_project_name=SLAM-Omni
 
-home_dir=/root/autodl-tmp/EmoVoice
+home_dir=/data/Shizihui/EmoVoice
 output_dir=$home_dir/$exp_name
 
 if [ "$exp_name" = "debug" ]; then
@@ -97,6 +99,7 @@ hydra.run.dir=$output_dir \
 ++train_config.use_emotion_token_loss=true \
 ++train_config.emotion_token_loss_weight=$EMOTION_LOSS_WEIGHT \
 ++train_config.audio_token_loss_weight=$AUDIO_LOSS_WEIGHT \
+++train_config.text_token_loss_weight=$TEXT_LOSS_WEIGHT \
 ++train_config.model_name=tts \
 ++train_config.num_epochs=$num_epochs \
 ++train_config.freeze_encoder=true \
