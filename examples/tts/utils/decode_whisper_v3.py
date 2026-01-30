@@ -18,6 +18,7 @@ def main(parent_dir, audio_subdir):
         for line in tqdm(file):
             id = line.split('\t')[0]
             audio_filename = id + '.wav'
+            # audio_filename = id
             audio_filepath = os.path.join(audio_dir, audio_filename)
             try:
                 result = model.transcribe(audio_filepath, language='en')

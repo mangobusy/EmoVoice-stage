@@ -149,7 +149,7 @@ def main(kwargs: DictConfig):
 				batch[key] = batch[key].to(device) if isinstance(batch[key], torch.Tensor) else batch[key]
 
 			# audio_prompt_path = batch["neutral_speaker_wav"][0]
-			audio_prompt_path = "/data/Shizihui/EmoVoice/audios/EN/neutral/gpt4o_14699_neutral_verse.wav"
+			audio_prompt_path = "/data/Shizihui/Data_preprocess/audio/EN/auntcretesemancipation_07_hill_0012.wav"
 			# =======================================================================================
 			# audio_prompt_path = "/root/autodl-tmp/data/EmoVoice-DB-Raw/"+audio_prompt_path
 			# =======================================================================================
@@ -229,9 +229,10 @@ def main(kwargs: DictConfig):
 				end_time = time.time()
 				audio_length = audio_hat.shape[1] / speech_sample_rate
 				RTF = (end_time - start_time) / audio_length
-				print("==============================================================")
+				# print("==============================================================")
+				# sf.write(f"{tone_audio_dir}/{key}", audio_hat.squeeze().cpu().numpy(), speech_sample_rate)
 				sf.write(f"{tone_audio_dir}/{key}.wav", audio_hat.squeeze().cpu().numpy(), speech_sample_rate)
-				print("=========================yes==============================")
+				# print("=========================yes==============================")
 				logger.info(f"Generated Audio: {tone_dir}/{key}.wav, audio length: {audio_length:.2f}s, generation time: {end_time - start_time:.2f}s, RTF: {RTF:.2f}")
 				RTF_llm = (end_time_llm - start_time) / audio_length
 				logger.info(f"LLM RTF: {RTF_llm:.2f}")

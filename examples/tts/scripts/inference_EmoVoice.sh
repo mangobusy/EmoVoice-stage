@@ -12,7 +12,8 @@ llm_path=/data/Shizihui/EmoVoice/ckp/Qwen2.5-0.5B
 codec_decoder_path=/data/Shizihui/Data_preprocess/ckp/CosyVoice-300M
 ckpt_path=/data/Shizihui/EmoVoice/ckp 
 split=test
-val_data_path=/data/Shizihui/Data_preprocess/HiFi_TTS/HiFi_TTS_test_test.jsonl
+val_data_path=/data/Shizihui/Data_preprocess/Total/EN/test.jsonl
+
 
 # vocabulary settings
 code_layer=3            # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 
@@ -39,9 +40,10 @@ temperature=1.0
 decode_text_only=false
 output_text_only=false
 speech_sample_rate=22050
+# speech_sample_rate=16000
 
 decode_log=$ckpt_path/tts_decode_${split}_rp${repetition_penalty}_seed${dataset_sample_seed}_greedy_kaiyuan
-model=/data/Shizihui/EmoVoice/Unified_Training/tts_latest/model.pt
+model=/data/Shizihui/EmoVoice/UT-hifi/tts_latest/model_10.pt
 
 if [ "$decode_text_only" = true ] ; then
     decode_log=$decode_log"_text_only"

@@ -31,17 +31,17 @@ num_latency_tokens=0                # number of latency tokens (in front of the 
 do_layershift=false                 # if false, tokens in each layers use the same codebook, otherwise, use different codebooks
 
 # dataset settings
-train_data_path="/data/Shizihui/Data_preprocess/HiFi_TTS/HiFi_TTS_train.jsonl"
-val_data_path="/data/Shizihui/Data_preprocess/HiFi_TTS/HiFi_TTS_val.jsonl"
+train_data_path="/data/Shizihui/Data_preprocess/Total/EN/train.jsonl"
+val_data_path="/data/Shizihui/Data_preprocess/Total/EN/val.jsonl"
 # train_data_path="/root/autodl-tmp/data/story_audio_w_emotion_tra/MsceneSpeech/MsceneSpeech_train_emotion.jsonl"
 # val_data_path="/root/autodl-tmp/data/VoiceAssistant-400K-v2/val_0.jsonl"
 
 
 # training settings
-batch_size_training=4
+batch_size_training=6
 use_fp16=true
 use_peft=false
-num_epochs=50
+num_epochs=10
 lr=1e-4
 warmup_steps=1000
 total_steps=100000
@@ -58,7 +58,7 @@ group_decode=true
 group_decode_adapter_type=linear
 
 # log settings
-exp_name="UT-hifi"
+exp_name="UT-EN"
 
 wandb_entity_name=u03zs21-sun-yat-sen-university
 wandb_project_name=SLAM-Omni
