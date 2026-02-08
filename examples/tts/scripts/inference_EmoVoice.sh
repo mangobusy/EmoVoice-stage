@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 export PYTHONPATH=$PYTHONPATH:/data/Shizihui/EmoVoice/src
-export CUDA_VISIBLE_DEVICES=0,1,2
+export CUDA_VISIBLE_DEVICES=2
 export TOKENIZERS_PARALLELISM=false
-export OMP_NUM_THREADS=1
+export OMP_NUM_THREADS=0
 export PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT=2
 export CUDA_LAUNCH_BLOCKING=1
 
@@ -12,8 +12,8 @@ llm_path=/data/Shizihui/EmoVoice/ckp/Qwen2.5-0.5B
 codec_decoder_path=/data/Shizihui/Data_preprocess/ckp/CosyVoice-300M
 ckpt_path=/data/Shizihui/EmoVoice/ckp 
 split=test
-val_data_path=/data/Shizihui/Data_preprocess/Total/EN/test.jsonl
-
+# val_data_path=/data/Shizihui/Data_preprocess/Total/EN/test.jsonl
+val_data_path=/data/Shizihui/EmoVoice-DB/test.jsonl
 
 # vocabulary settings
 code_layer=3            # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 
@@ -42,8 +42,12 @@ output_text_only=false
 speech_sample_rate=22050
 # speech_sample_rate=16000
 
-decode_log=$ckpt_path/tts_decode_${split}_rp${repetition_penalty}_seed${dataset_sample_seed}_greedy_kaiyuan
-model=/data/Shizihui/EmoVoice/UT-hifi/tts_latest/model_10.pt
+# decode_log=$ckpt_path/tts_decode_${split}_rp${repetition_penalty}_seed${dataset_sample_seed}_greedy_kaiyuan
+# decode_log=$ckpt_path/UT-EN-2/EN_dataset_ep12
+decode_log=$ckpt_path/UT-EN-2/Emo-DB_dataset_ep12
+
+# decode_log=$ckpt_path/EN_dataset_ep6
+model=/data/Shizihui/EmoVoice/UT-EN-2/model_12.pt/model.pt
 
 if [ "$decode_text_only" = true ] ; then
     decode_log=$decode_log"_text_only"

@@ -38,13 +38,13 @@ val_data_path="/data/Shizihui/Data_preprocess/Total/EN/val.jsonl"
 
 
 # training settings
-batch_size_training=6
+batch_size_training=4
 use_fp16=true
 use_peft=false
 num_epochs=10
 lr=1e-4
 warmup_steps=1000
-total_steps=100000
+total_steps=150000
 
 # validation settings
 # -----------------------------------------------------------------------------------
@@ -58,7 +58,7 @@ group_decode=true
 group_decode_adapter_type=linear
 
 # log settings
-exp_name="UT-EN"
+exp_name="UT-EN-3"
 
 wandb_entity_name=u03zs21-sun-yat-sen-university
 wandb_project_name=SLAM-Omni
@@ -115,7 +115,7 @@ hydra.run.dir=$output_dir \
 ++train_config.output_dir=$output_dir \
 ++train_config.use_fp16=$use_fp16 \
 ++train_config.use_peft=$use_peft \
-++train_config.shuffle_train=false \
+++train_config.shuffle_train=true \
 ++metric=acc \
 ++log_config.use_wandb=$use_wandb \
 ++log_config.wandb_entity_name=$wandb_entity_name \

@@ -143,14 +143,38 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                 loss = loss / gradient_accumulation_steps
                 # 处理 layer_loss (List) 的平均
                 emotion_acc = None
+                val_acc = None
+                aro_acc = None
+                val_mae = None
+                aro_mae = None
+                V_loss = None
+                aro_loss = None
                 if isinstance(layer_loss, dict):
-                    emotion_acc = layer_loss.get("emotion_acc")
+                    # emotion_acc = layer_loss.get("emotion_acc")
+                    val_acc = layer_loss.get("val_acc")
+                    aro_acc = layer_loss.get("aro_acc")
+                    val_mae = layer_loss.get("val_mae")
+                    aro_mae = layer_loss.get("aro_mae")
+                    V_loss = layer_loss.get("val_loss")
+                    aro_loss = layer_loss.get("aro_loss")
                     layer_loss_values = layer_loss.get("layer_loss")
                     if isinstance(layer_loss_values, list):
                         layer_loss_values = [l / gradient_accumulation_steps for l in layer_loss_values]
                         layer_loss["layer_loss"] = layer_loss_values
                     if emotion_acc is not None:
                         layer_loss["emotion_acc"] = emotion_acc / gradient_accumulation_steps
+                    if val_acc is not None:
+                        layer_loss["val_acc"] = val_acc / gradient_accumulation_steps
+                    if aro_acc is not None:
+                        layer_loss["aro_acc"] = aro_acc / gradient_accumulation_steps
+                    if val_mae is not None:
+                        layer_loss["val_mae"] = val_mae / gradient_accumulation_steps
+                    if aro_mae is not None:
+                        layer_loss["aro_mae"] = aro_mae / gradient_accumulation_steps
+                    if V_loss is not None:
+                        layer_loss["val_loss"] = V_loss / gradient_accumulation_steps
+                    if aro_loss is not None:
+                        layer_loss["aro_loss"] = aro_loss / gradient_accumulation_steps
                 elif isinstance(layer_loss, list):
                     layer_loss = [l / gradient_accumulation_steps for l in layer_loss]
                 # layer_loss = [l / gradient_accumulation_steps for l in layer_loss]
@@ -190,6 +214,22 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                                 log_dict[f"Audio Loss (layer{layer})"] = l
                         if isinstance(layer_loss, dict) and layer_loss.get("emotion_acc") is not None:
                             log_dict["Emotion Accuracy"] = layer_loss["emotion_acc"]
+                        if isinstance(layer_loss, dict):
+                            if layer_loss.get("emotion_acc") is not None:
+                                log_dict["Emotion Accuracy"] = layer_loss["emotion_acc"]
+                            if layer_loss.get("val_loss") is not None:
+                                log_dict["Valence Loss"] = layer_loss["val_loss"]
+                            if layer_loss.get("aro_loss") is not None:
+                                log_dict["Arousal Loss"] = layer_loss["aro_loss"]
+                            if layer_loss.get("val_acc") is not None:
+                                log_dict["Valence Accuracy"] = layer_loss["val_acc"]
+                            if layer_loss.get("aro_acc") is not None:
+                                log_dict["Arousal Accuracy"] = layer_loss["aro_acc"]
+                            if layer_loss.get("val_mae") is not None:
+                                log_dict["Valence MAE"] = layer_loss["val_mae"]
+                            if layer_loss.get("aro_mae") is not None:
+                                log_dict["Arousal MAE"] = layer_loss["aro_mae"]
+
 
                     if train_config.enable_fsdp or train_config.enable_ddp:
                         if rank == 0:
@@ -313,6 +353,13 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         eval_text_acc = rest[0] if rest else -1
                         eval_audio_acc = rest[1] if rest else -1
                         eval_emotion_acc = rest[2] if len(rest) > 2 else -1
+                        eval_audio_loss = rest[3] if len(rest) > 3 else -1
+                        eval_V_acc = rest[4] if len(rest) > 4 else -1
+                        eval_A_acc = rest[5] if len(rest) > 5 else -1
+                        eval_V_mae = rest[6] if len(rest) > 6 else -1
+                        eval_A_mae = rest[7] if len(rest) > 7 else -1
+                        eval_V_loss = rest[8] if len(rest) > 8 else -1
+                        eval_A_loss = rest[9] if len(rest) > 9 else -1
                         is_best = eval_loss < best_val_loss # 或者使用 acc 判断
                         current_metric = eval_text_acc
                     # ====================================================
@@ -330,7 +377,8 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                     if train_config.save_model:
                         # ==================================================================================================================
                         '''checkpoint_name = f"{train_config.model_name}_epoch_{str(epoch+1)}_step_{step+1}" '''
-                        checkpoint_name = f"{train_config.model_name}_latest"  # 只保存最新的模型
+                        # checkpoint_name = f"{train_config.model_name}_latest"  # 只保存最新的模型
+                        checkpoint_name = f"model_{epoch+1}.pt"
                         # ==================================================================================================================
 
                         if train_config.enable_fsdp or train_config.enable_ddp:
@@ -495,10 +543,13 @@ def train(model, train_dataloader,eval_dataloader, tokenizer, optimizer, lr_sche
                         if log_config.use_wandb:
                             if train_config.enable_fsdp or train_config.enable_ddp:
                                 if rank==0:
-                                    wandb.log({"valid/val_loss":eval_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_text_acc":val_text_acc[-1], "valid/val_emotion_acc":val_emotion_acc[-1],"valid/val_audio_acc":val_audio_acc[-1], "valid/val_best_audio_acc":best_val_audio_acc, "valid/val_best_text_acc":best_val_text_acc, "valid/val_best_emotion_acc":best_val_emotion_acc })
+                                    # wandb.log({"valid/val_loss":eval_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_text_acc":val_text_acc[-1], "valid/val_emotion_acc":val_emotion_acc[-1],"valid/val_audio_acc":val_audio_acc[-1], "valid/val_audio_loss":eval_audio_loss, "valid/val_best_audio_acc":best_val_audio_acc, "valid/val_best_text_acc":best_val_text_acc, "valid/val_best_emotion_acc":best_val_emotion_acc })
+                                    wandb.log({"valid/val_loss":eval_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_text_acc":val_text_acc[-1], "valid/val_emotion_acc":val_emotion_acc[-1], "valid/val_audio_acc":val_audio_acc[-1], "valid/val_audio_loss":eval_audio_loss, "valid/val_valence_acc":eval_V_acc, "valid/val_arousal_acc":eval_A_acc, "valid/val_valence_mae":eval_V_mae, "valid/val_arousal_mae":eval_A_mae, "valid/val_valence_loss":eval_V_loss, "valid/val_arousal_loss":eval_A_loss, "valid/val_best_audio_acc":best_val_audio_acc, "valid/val_best_text_acc":best_val_text_acc, "valid/val_best_emotion_acc":best_val_emotion_acc })
                             else:
-                                wandb.log({"valid/val_loss":eval_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_text_acc":val_text_acc[-1], "valid/val_emotion_acc":val_emotion_acc[-1], "valid/val_audio_acc":val_audio_acc[-1], "valid/val_best_audio_acc":best_val_audio_acc, "valid/val_best_text_acc":best_val_text_acc, "valid/val_best_emotion_acc":best_val_emotion_acc })
-
+                                # wandb.log({"valid/val_loss":eval_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_text_acc":val_text_acc[-1], "valid/val_emotion_acc":val_emotion_acc[-1], "valid/val_audio_acc":val_audio_acc[-1], "valid/val_audio_loss":eval_audio_loss, "valid/val_best_audio_acc":best_val_audio_acc, "valid/val_best_text_acc":best_val_text_acc, "valid/val_best_emotion_acc":best_val_emotion_acc })
+                                # wandb.log({"valid/val_loss":eval_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_text_acc":val_text_acc[-1], "valid/val_emotion_acc":val_emotion_acc[-1], "valid/val_audio_acc":val_audio_acc[-1], "valid/val_audio_loss":eval_audio_loss, "valid/val_valence_acc":eval_val_acc, "valid/val_arousal_acc":eval_aro_acc, "valid/val_valence_mae":eval_val_mae, "valid/val_arousal_mae":eval_aro_mae, "valid/val_valence_loss":eval_val_loss, "valid/val_arousal_loss":eval_aro_loss, "valid/val_best_audio_acc":best_val_audio_acc, "valid/val_best_text_acc":best_val_text_acc, "valid/val_best_emotion_acc":best_val_emotion_acc })
+                                wandb.log({"valid/val_loss":eval_loss, "valid/val_perplexity":eval_ppl, "valid/best_val_loss":best_val_loss, "valid/val_text_acc":val_text_acc[-1], "valid/val_emotion_acc":val_emotion_acc[-1], "valid/val_audio_acc":val_audio_acc[-1], "valid/val_audio_loss":eval_audio_loss, "valid/val_valence_acc":eval_V_acc, "valid/val_arousal_acc":eval_A_acc, "valid/val_valence_mae":eval_V_mae, "valid/val_arousal_mae":eval_A_mae, "valid/val_valence_loss":eval_V_loss, "valid/val_arousal_loss":eval_A_loss, "valid/val_best_audio_acc":best_val_audio_acc, "valid/val_best_text_acc":best_val_text_acc, "valid/val_best_emotion_acc":best_val_emotion_acc })
+                                
                 if train_config.run_test_during_validation and stage != 1:
                     if train_config.enable_fsdp or train_config.enable_ddp:
                         if rank==0:
@@ -631,6 +682,13 @@ def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
     eval_text_acc = 0.0
     eval_audio_acc = 0.0
     eval_emotion_acc = 0.0
+    eval_audio_loss = 0.0
+    eval_val_acc = 0.0
+    eval_aro_acc = 0.0
+    eval_val_mae = 0.0
+    eval_aro_mae = 0.0
+    eval_val_loss = 0.0
+    eval_aro_loss = 0.0
     autocast = torch.cuda.amp.autocast if train_config.use_fp16 else nullcontext
 
     with MemoryTrace() as memtrace:
@@ -665,11 +723,29 @@ def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
                     text_acc = rest[0] if rest else -1   # text_acc
                     audio_acc = rest[1] if rest else -1
                     layer_loss = rest[2] if len(rest) > 2 else None
-                    if isinstance(layer_loss, dict) and layer_loss.get("emotion_acc") is not None:
-                        eval_emotion_acc += layer_loss["emotion_acc"]
+                    # if isinstance(layer_loss, dict) and layer_loss.get("emotion_acc") is not None:
+                    #     eval_emotion_acc += layer_loss["emotion_acc"]
+                    if isinstance(layer_loss, dict):
+                        if layer_loss.get("emotion_acc") is not None:
+                            eval_emotion_acc += layer_loss["emotion_acc"]
+                        if layer_loss.get("val_acc") is not None:
+                            eval_val_acc += layer_loss["val_acc"]
+                        if layer_loss.get("aro_acc") is not None:
+                            eval_aro_acc += layer_loss["aro_acc"]
+                        if layer_loss.get("val_mae") is not None:
+                            eval_val_mae += layer_loss["val_mae"]
+                        if layer_loss.get("aro_mae") is not None:
+                            eval_aro_mae += layer_loss["aro_mae"]
+                        if layer_loss.get("val_loss") is not None:
+                            eval_val_loss += layer_loss["val_loss"]
+                        if layer_loss.get("aro_loss") is not None:
+                            eval_aro_loss += layer_loss["aro_loss"]
                     eval_text_acc += text_acc
                     eval_audio_acc += audio_acc[0]
-                    
+                    layer_loss_values = layer_loss.get("layer_loss") if isinstance(layer_loss, dict) else layer_loss
+                    if isinstance(layer_loss_values, list) and layer_loss_values:
+                        eval_audio_loss += sum(layer_loss_values[:-1]) if len(layer_loss_values) > 1 else layer_loss_values[0]
+
                     # Decode predictions (仅在 Stage 2 进行)
                     try:
                         preds = torch.argmax(outputs.logits, -1)
@@ -683,9 +759,16 @@ def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
                  pbar.set_description(f"step: {step+1}/{total_length}, eval_loss: {eval_loss/(step+1):.4f}, eval_mae: {eval_acc/(step+1):.4f}")
             else:
                 #  pbar.set_description(f"step: {step+1}/{total_length}, eval_loss: {eval_loss/(step+1):.4f}, eval_acc: {eval_acc/(step+1):.4f}")
+                # pbar.set_description(
+                #      f"step: {step+1}/{total_length}, eval_loss: {eval_loss/(step+1):.4f}, "
+                #      f"eval_text_acc: {eval_text_acc/(step+1):.4f}, eval_audio_loss: {eval_audio_loss/(step+1):.4f}, "
+                #      f"eval_emo_acc: {eval_emotion_acc:.4f}"
+                #  )
                 pbar.set_description(
                      f"step: {step+1}/{total_length}, eval_loss: {eval_loss/(step+1):.4f}, "
-                     f"eval_text_acc: {eval_text_acc/(step+1):.4f}, eval_emo_acc: {eval_emotion_acc:.4f}"
+                     f"eval_text_acc: {eval_text_acc/(step+1):.4f}, eval_audio_loss: {eval_audio_loss/(step+1):.4f}, "
+                     f"eval_emo_acc: {eval_emotion_acc:.4f}"
+                     f"eval_val_mae: {eval_val_mae/(step+1):.4f}, eval_aro_mae: {eval_aro_mae/(step+1):.4f}"
                  )
 
 
@@ -715,28 +798,65 @@ def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
             
         if not isinstance(eval_audio_acc, torch.Tensor):
             eval_audio_acc = torch.tensor(eval_audio_acc).to(local_rank)
-        if not isinstance(eval_emotion_acc, torch.Tensor):
-            eval_emotion_acc = torch.tensor(eval_emotion_acc).to(local_rank)
+        # if not isinstance(eval_emotion_acc, torch.Tensor):
+        #     eval_emotion_acc = torch.tensor(eval_emotion_acc).to(local_rank)
+        if not isinstance(eval_audio_loss, torch.Tensor):
+            eval_audio_loss = torch.tensor(eval_audio_loss).to(local_rank)
+        if not isinstance(eval_val_acc, torch.Tensor):
+            eval_val_acc = torch.tensor(eval_val_acc).to(local_rank)
+        if not isinstance(eval_aro_acc, torch.Tensor):
+            eval_aro_acc = torch.tensor(eval_aro_acc).to(local_rank)
+        if not isinstance(eval_val_mae, torch.Tensor):
+            eval_val_mae = torch.tensor(eval_val_mae).to(local_rank)
+        if not isinstance(eval_aro_mae, torch.Tensor):
+            eval_aro_mae = torch.tensor(eval_aro_mae).to(local_rank)
+        if not isinstance(eval_val_loss, torch.Tensor):
+            eval_val_loss = torch.tensor(eval_val_loss).to(local_rank)
+        if not isinstance(eval_aro_loss, torch.Tensor):
+            eval_aro_loss = torch.tensor(eval_aro_loss).to(local_rank)
         # ============ 修复代码 END ============
 
         dist.all_reduce(eval_loss, op=dist.ReduceOp.SUM)
         dist.all_reduce(eval_text_acc, op=dist.ReduceOp.SUM)
         dist.all_reduce(eval_audio_acc, op=dist.ReduceOp.SUM)
-        dist.all_reduce(eval_emotion_acc, op=dist.ReduceOp.SUM)
+        # dist.all_reduce(eval_emotion_acc, op=dist.ReduceOp.SUM)
+        dist.all_reduce(eval_audio_loss, op=dist.ReduceOp.SUM)
+        dist.all_reduce(eval_val_acc, op=dist.ReduceOp.SUM)
+        dist.all_reduce(eval_aro_acc, op=dist.ReduceOp.SUM)
+        dist.all_reduce(eval_val_mae, op=dist.ReduceOp.SUM)
+        dist.all_reduce(eval_aro_mae, op=dist.ReduceOp.SUM)
+        dist.all_reduce(eval_val_loss, op=dist.ReduceOp.SUM)
+        dist.all_reduce(eval_aro_loss, op=dist.ReduceOp.SUM)
 
     # Compute average loss and perplexity
     eval_loss = eval_loss / len(eval_dataloader)
     eval_text_acc = eval_text_acc / len(eval_dataloader)
     eval_audio_acc = eval_audio_acc / len(eval_dataloader)
-    eval_emotion_acc = eval_emotion_acc / len(eval_dataloader)
+    # eval_emotion_acc = eval_emotion_acc / len(eval_dataloader)
+    eval_audio_loss = eval_audio_loss / len(eval_dataloader)
+    eval_val_acc = eval_val_acc / len(eval_dataloader)
+    eval_aro_acc = eval_aro_acc / len(eval_dataloader)
+    eval_val_mae = eval_val_mae / len(eval_dataloader)
+    eval_aro_mae = eval_aro_mae / len(eval_dataloader)
+    eval_val_loss = eval_val_loss / len(eval_dataloader)
+    eval_aro_loss = eval_aro_loss / len(eval_dataloader)
     
     if train_config.enable_fsdp or train_config.enable_ddp:
         eval_loss = eval_loss/world_size
         eval_text_acc = eval_text_acc/world_size
         eval_audio_acc = eval_audio_acc/world_size
-        eval_emotion_acc = eval_emotion_acc/world_size
+        # eval_emotion_acc = eval_emotion_acc/world_size
+        eval_audio_loss = eval_audio_loss/world_size
+        eval_val_acc = eval_val_acc/world_size
+        eval_aro_acc = eval_aro_acc/world_size
+        eval_val_mae = eval_val_mae/world_size
+        eval_aro_mae = eval_aro_mae/world_size
+        eval_val_loss = eval_val_loss/world_size
+        eval_aro_loss = eval_aro_loss/world_size
 
     eval_ppl = torch.exp(eval_loss)
+    if eval_emotion_acc == 0.0 and (eval_val_acc != 0.0 or eval_aro_acc != 0.0):
+        eval_emotion_acc = (eval_val_acc + eval_aro_acc) / 2
 
     # Print evaluation metrics
     if train_config.enable_fsdp or train_config.enable_ddp:
@@ -745,7 +865,7 @@ def evaluation(model,train_config, eval_dataloader, local_rank, tokenizer):
     else:
         logger.info(f" {eval_ppl=} {eval_loss=} {eval_text_acc=} {eval_audio_acc=} {eval_emotion_acc=}")
 
-    return eval_ppl, eval_loss, eval_text_acc, eval_audio_acc, eval_emotion_acc
+    return eval_ppl, eval_loss, eval_text_acc, eval_audio_acc, eval_emotion_acc, eval_audio_loss,eval_val_acc, eval_aro_acc, eval_val_mae, eval_aro_mae, eval_val_loss, eval_aro_loss
 
 def freeze_transformer_layers(model, num_layer):
    for i, layer in enumerate(model.model.layers):

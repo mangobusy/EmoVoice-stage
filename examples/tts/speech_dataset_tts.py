@@ -77,6 +77,7 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         else:
             with open(dataset_config.val_data_path, encoding='utf-8') as fin:
                 for line in fin:
+                    # print(line)
                     data_dict = json.loads(line.strip())
                     self.data_list.append(data_dict)
 
