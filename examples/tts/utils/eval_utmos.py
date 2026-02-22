@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 def main():
     parser = argparse.ArgumentParser(description="UTMOS Evaluation")
-    parser.add_argument("--audio_dir", type=str, required=True, help="Audio file path.")
+    parser.add_argument("--audio_dir", type=str, default="/data/Shizihui/MyModel/ckp/UT-EN-10/EN-6.2/pred_audio/neutral_prompt_speech", help="Audio file path.")
     parser.add_argument("--ext", type=str, default="wav", help="Audio extension.")
     args = parser.parse_args()
 

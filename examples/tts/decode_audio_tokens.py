@@ -9,10 +9,10 @@ import torch
 
 '''
 python examples/tts/decode_audio_tokens.py \
-  --jsonl /data/Shizihui/Data_preprocess/test_tokenizer.jsonl \
-  --output-dir /data/Shizihui/Data_preprocess/test_tokenizer \
+  --jsonl /data/Shizihui/Data_preprocess/LibriSpeech/librispeech-train_audio_tokens.jsonl \
+  --output-dir /data/Shizihui/Data_preprocess/LibriSpeech/test \
   --codec-decoder-path /data/Shizihui/Data_preprocess/ckp/CosyVoice-300M \
-  --audio-prompt-path /data/Shizihui/EmoVoice/audios/EN/neutral/gpt4o_14699_neutral_verse.wav \
+  --audio-prompt-path /data/Shizihui/MyModel/audios/EN/neutral/gpt4o_14699_neutral_verse.wav \
   --token-field answer_cosyvoice_speech_token \
   --code-layer 3 \
   --num-latency-tokens 0 \

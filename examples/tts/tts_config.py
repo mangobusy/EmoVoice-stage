@@ -10,7 +10,7 @@ class VocabConfig:
     audio_vocabsize: int = 4096
     audio_specialtokens: int = 64
     code_layer: int = 3
-    emotion_bins: int = 100
+    emotion_bins: int = 10
 
     padded_text_vocabsize: int = field(init=False)
     padded_audio_vocabsize: int = field(init=False)
@@ -76,7 +76,7 @@ class TTSAdapterConfig:
 
 @dataclass
 class ModelConfig:
-    file: str = "examples/tts/model/slam_model_tts_3.py:model_factory"
+    file: str = "examples/tts/model/slam_model_tts_4.py:model_factory"
     llm_name: str = "vicuna-13b-v1.5"
     llm_path: str = "PATH/to/LLAMA/7B"
     llm_type: str = "decoder_only"

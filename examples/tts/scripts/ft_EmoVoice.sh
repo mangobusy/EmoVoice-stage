@@ -1,15 +1,16 @@
 #!/bin/bash
-export PYTHONPATH=$PYTHONPATH:/root/autodl-tmp/EmoVoice/src
-export CUDA_VISIBLE_DEVICES=0,1
+set -e
+export PYTHONPATH=$PYTHONPATH:/data/Shizihui/MyModel/src
+export CUDA_VISIBLE_DEVICES=0,1,2
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=1
 
-code_dir=/root/autodl-tmp/EmoVoice/examples/tts
+code_dir=/data/Shizihui/MyModel/examples/tts
 num_gpus_per_node=$(( $(echo ${CUDA_VISIBLE_DEVICES} | tr -cd ',' | wc -c) + 1 ))
 num_nodes=1
 num_gpus=$(( num_gpus_per_node * num_nodes ))
 
-llm_path=/root/autodl-tmp/EmoVoice/checkpoint/Qwen2.5-0.5B
+llm_path=/data/Shizihui/MyModel/ckp/Qwen2.5-0.5B
 llm_name=Qwen2.5-0.5b
 llm_dim=896                         # 896 1536 3584 8192  -> 0.5B 1.5B 3B 7B
 
@@ -17,41 +18,47 @@ llm_dim=896                         # 896 1536 3584 8192  -> 0.5B 1.5B 3B 7B
 code_layer=3                        # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 
 total_audio_vocabsize=4160          # the vocab size of the codec token
 llm_vocabsize=152000                # the vocab size of the LLM model (Qwen2 here)
-total_vocabsize=$((total_audio_vocabsize + llm_vocabsize))
+EMOTION_BINS=50
+total_vocabsize=$((total_audio_vocabsize + llm_vocabsize + EMOTION_BINS * 2))
+
+EMOTION_LOSS_WEIGHT=5.0
+AUDIO_LOSS_WEIGHT=1.0
+TEXT_LOSS_WEIGHT=1
 
 # code settings
 num_latency_tokens=0                # number of latency tokens (in front of the generated audio tokens)
 do_layershift=false                 # if false, tokens in each layers use the same codebook, otherwise, use different codebooks
 
 # dataset settings
-train_data_path=/root/autodl-tmp/data/EmoVoice-DB-Raw/train.jsonl
-val_data_path=/root/autodl-tmp/data/EmoVoice-DB-Raw/test.jsonl
-
+train_data_path=//data/Shizihui/Data_preprocess/Total/EN/FT/Blizzard_train.jsonl
+val_data_path=/data/Shizihui/Data_preprocess/Blizzard/Blizzard_val.jsonl
 # training settings
-batch_size_training=6
+batch_size_training=4
 use_fp16=true
 use_peft=false
-num_epochs=400
+num_epochs=500
 lr=1e-5
 warmup_steps=1000
 total_steps=100000
 
 # validation settings
-validation_interval=2500
+validation_interval=50
 split_size=0.01
 # model settings
 group_decode=true
 group_decode_adapter_type=linear
 
 # log settings
-exp_name="debug1"
+exp_name="FT-EN-2"
 
-wandb_entity_name=yanghaha
+wandb_entity_name=u03zs21-sun-yat-sen-university
 wandb_project_name=SLAM-Omni
 
-home_dir=/root/autodl-tmp/EmoVoice
+home_dir=/data/Shizihui/MyModel
 output_dir=$home_dir/$exp_name
-ckpt_path=/root/autodl-tmp/EmoVoice/checkpoint # this line is for resuming training
+
+# 预训练模型权重
+ckpt_path=/data/Shizihui/MyModel/UT-EN-4/model_3.pt/model.pt 
 
 if [ "$exp_name" = "debug" ]; then
     use_wandb=false
@@ -104,8 +111,8 @@ hydra.run.dir=$output_dir \
 ++log_config.wandb_exp_name=$wandb_exp_name \
 ++log_config.wandb_dir=$output_dir \
 ++log_config.log_file=$output_dir/exp.log \
-++log_config.log_interval=100 \
-++ckpt_path=$ckpt_path/EmoVoice.pt \
+++log_config.log_interval=20 \
+++ckpt_path=$ckpt_path \
 "
 # ↑ this line is for resuming training
 

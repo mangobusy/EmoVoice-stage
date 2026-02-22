@@ -1,24 +1,28 @@
 #!/bin/bash
 set -e
-export PYTHONPATH=$PYTHONPATH:/data/Shizihui/EmoVoice/src
+export PYTHONPATH=$PYTHONPATH:/data/Shizihui/MyModel/src
 export CUDA_VISIBLE_DEVICES=2
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=0
 export PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT=2
 export CUDA_LAUNCH_BLOCKING=1
 
-code_dir=/data/Shizihui/EmoVoice/examples/tts
-llm_path=/data/Shizihui/EmoVoice/ckp/Qwen2.5-0.5B
+code_dir=/data/Shizihui/MyModel/examples/tts
+llm_path=/data/Shizihui/MyModel/ckp/Qwen2.5-0.5B
 codec_decoder_path=/data/Shizihui/Data_preprocess/ckp/CosyVoice-300M
-ckpt_path=/data/Shizihui/EmoVoice/ckp 
+ckpt_path=/data/Shizihui/MyModel/ckp 
 split=test
-# val_data_path=/data/Shizihui/Data_preprocess/Total/EN/test.jsonl
-val_data_path=/data/Shizihui/EmoVoice-DB/test.jsonl
+val_data_path=/data/Shizihui/Data_preprocess/Total/EN/test_lowercase.jsonl
+# val_data_path=/data/Shizihui/EmoVoice-DB/test_lowercase.jsonl
+# val_data_path=/data/Shizihui/Data_preprocess/Total/EN/librispeech_test_clean.jsonl
 
 # vocabulary settings
 code_layer=3            # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 
 total_audio_vocabsize=4160
-total_vocabsize=156360  # 152000 + 4160 Sry: Here is not elegant to set the total_vocabsize manually, I may fix it later :)
+llm_vocabsize=152000 
+EMOTION_BINS=10
+total_vocabsize=$((total_audio_vocabsize + llm_vocabsize + EMOTION_BINS * 2))
+# total_vocabsize=156360  # 152000 + 4160 Sry: Here is not elegant to set the total_vocabsize manually, I may fix it later :)
 
 # code settings
 codec_decoder_type=CosyVoice
@@ -43,11 +47,13 @@ speech_sample_rate=22050
 # speech_sample_rate=16000
 
 # decode_log=$ckpt_path/tts_decode_${split}_rp${repetition_penalty}_seed${dataset_sample_seed}_greedy_kaiyuan
-# decode_log=$ckpt_path/UT-EN-2/EN_dataset_ep12
-decode_log=$ckpt_path/UT-EN-2/Emo-DB_dataset_ep12
+# decode_log=$ckpt_path/UT-EN-6/librispeech
+decode_log=$ckpt_path/UT-EN-10/EN-6.2
 
 # decode_log=$ckpt_path/EN_dataset_ep6
-model=/data/Shizihui/EmoVoice/UT-EN-2/model_12.pt/model.pt
+model=/data/Shizihui/MyModel/UT-EN-10/model_6.pt/model.pt
+# model=/data/Shizihui/EmoVoice/Emovoice-ckp/EmoVoice.pt
+
 
 if [ "$decode_text_only" = true ] ; then
     decode_log=$decode_log"_text_only"
