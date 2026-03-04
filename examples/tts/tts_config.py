@@ -10,7 +10,7 @@ class VocabConfig:
     audio_vocabsize: int = 4096
     audio_specialtokens: int = 64
     code_layer: int = 3
-    emotion_bins: int = 10
+    emotion_bins: int = 50
 
     padded_text_vocabsize: int = field(init=False)
     padded_audio_vocabsize: int = field(init=False)
@@ -172,7 +172,7 @@ class TrainConfig:
     task_type:str = "TTS"
     freeze_encoder_projector:bool = False
     freeze_group_decode_adapter:bool = False
-    # modeling_paradigm:str = field(default="parallel", metadata={
+    # modeling_paradigm:str = field(default="interleaved", metadata={
     #     "help": "alternative: interleaved"
     # })
     modeling_paradigm: str = field(default="serial", metadata={
@@ -249,6 +249,7 @@ class DataConfig:
     use_emotion_tokens: bool = field(default=True, metadata={
         "help": "Whether to map emotion labels to discrete tokens and prepend to text labels"})
     # =============================================================================
+    context_sentence_num: int = 1
 
 
 @dataclass

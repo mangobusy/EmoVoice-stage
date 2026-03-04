@@ -144,11 +144,16 @@ class slam_model_tts(slam_model):
                 inputs_embeds = self.llm.model.model.model.embed_tokens(input_ids)
         # print("inputs_embeds shape:", inputs_embeds.shape) # [btz, code_layer, seq_length, emb_dim]
         # print("inputs_embeds:", inputs_embeds)
+        # print("modality_mask shape:", modality_mask.shape)  # [btz, seq_length]
+        # print("modality_mask:", modality_mask)   
+        # print("encoder_outs:", encoder_outs)
+        # print(self.train_config.modeling_paradigm)
         # breakpoint()
         if modality_mask is not None and encoder_outs is not None:
             # print("modality_mask shape:", modality_mask.shape)  
             # print("encoder_outs shape:", encoder_outs.shape)
             # print(self.train_config.modeling_paradigm)
+            # breakpoint()
             if self.train_config.modeling_paradigm == "parallel":
                 modality_mask = modality_mask.unsqueeze(1).repeat(1, self.code_layer, 1)  # [btz, code_layer, seq_length]
                 modality_mask_start_indices = (modality_mask == True).float().argmax(dim=2)

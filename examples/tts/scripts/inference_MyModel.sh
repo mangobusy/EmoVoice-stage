@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 export PYTHONPATH=$PYTHONPATH:/data/Shizihui/MyModel/src
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=0
 export PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT=2
@@ -12,7 +12,7 @@ llm_path=/data/Shizihui/MyModel/ckp/Qwen2.5-0.5B
 codec_decoder_path=/data/Shizihui/Data_preprocess/ckp/CosyVoice-300M
 ckpt_path=/data/Shizihui/MyModel/ckp 
 split=test
-val_data_path=/data/Shizihui/Data_preprocess/Total/EN/test_lowercase.jsonl
+val_data_path=/data/Shizihui/Data_preprocess/Total/test-context.jsonl
 # val_data_path=/data/Shizihui/EmoVoice-DB/test_lowercase.jsonl
 # val_data_path=/data/Shizihui/Data_preprocess/Total/EN/librispeech_test_clean.jsonl
 
@@ -20,10 +20,10 @@ val_data_path=/data/Shizihui/Data_preprocess/Total/EN/test_lowercase.jsonl
 code_layer=3            # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 
 total_audio_vocabsize=4160
 llm_vocabsize=152000 
-EMOTION_BINS=10
+EMOTION_BINS=50
 total_vocabsize=$((total_audio_vocabsize + llm_vocabsize + EMOTION_BINS * 2))
 # total_vocabsize=156360  # 152000 + 4160 Sry: Here is not elegant to set the total_vocabsize manually, I may fix it later :)
-
+context_sentence_num=1
 # code settings
 codec_decoder_type=CosyVoice
 num_latency_tokens=0     # number of latency tokens (same as the number in training)
@@ -48,10 +48,10 @@ speech_sample_rate=22050
 
 # decode_log=$ckpt_path/tts_decode_${split}_rp${repetition_penalty}_seed${dataset_sample_seed}_greedy_kaiyuan
 # decode_log=$ckpt_path/UT-EN-6/librispeech
-decode_log=$ckpt_path/UT-EN-10/EN-6.2
+decode_log=$ckpt_path/UT-EN-23/EN-4
 
 # decode_log=$ckpt_path/EN_dataset_ep6
-model=/data/Shizihui/MyModel/UT-EN-10/model_6.pt/model.pt
+model=/data/Shizihui/MyModel/UT-EN-23/model_4.pt/model.pt
 # model=/data/Shizihui/EmoVoice/Emovoice-ckp/EmoVoice.pt
 
 
@@ -59,59 +59,60 @@ if [ "$decode_text_only" = true ] ; then
     decode_log=$decode_log"_text_only"
 fi
 
-# -m debugpy --listen 5678 --wait-for-client
-python $code_dir/inference_tts.py \
-        hydra.run.dir=$ckpt_path \
-        ++model_config.llm_name=qwen2.5-0.5b \
-        ++model_config.llm_path=$llm_path \
-        ++model_config.llm_dim=896 \
-        ++model_config.codec_decoder_path=$codec_decoder_path \
-        ++model_config.codec_decode=true \
-        ++model_config.vocab_config.code_layer=$code_layer \
-        ++model_config.vocab_config.total_audio_vocabsize=$total_audio_vocabsize \
-        ++model_config.vocab_config.total_vocabsize=$total_vocabsize \
-        ++model_config.codec_decoder_type=$codec_decoder_type \
-        ++model_config.group_decode=$group_decode \
-        ++model_config.group_decode_adapter_type=$group_decode_adapter_type \
-        ++model_config.use_text_stream=false \
-        ++dataset_config.dataset=speech_dataset_tts \
-        ++dataset_config.val_data_path=$val_data_path \
-        ++dataset_config.train_data_path=$val_data_path \
-        ++dataset_config.inference_mode=true \
-        ++dataset_config.vocab_config.code_layer=$code_layer \
-        ++dataset_config.vocab_config.total_audio_vocabsize=$total_audio_vocabsize \
-        ++dataset_config.vocab_config.total_vocabsize=$total_vocabsize \
-        ++dataset_config.num_latency_tokens=$num_latency_tokens \
-        ++dataset_config.do_layershift=$do_layershift \
-        ++dataset_config.use_emo=true \
-        ++train_config.model_name=tts \
-        ++train_config.freeze_encoder=true \
-        ++train_config.freeze_llm=true \
-        ++train_config.freeze_group_decode_adapter=true \
-        ++train_config.batching_strategy=custom \
-        ++train_config.num_epochs=1 \
-        ++train_config.val_batch_size=1 \
-        ++train_config.num_workers_dataloader=2 \
-        ++decode_config.text_repetition_penalty=$text_repetition_penalty \
-        ++decode_config.audio_repetition_penalty=$audio_repetition_penalty \
-        ++decode_config.max_new_tokens=$max_new_tokens \
-        ++decode_config.do_sample=$do_sample \
-        ++decode_config.top_p=$top_p \
-        ++decode_config.top_k=$top_k \
-        ++decode_config.temperature=$temperature \
-        ++decode_config.decode_text_only=$decode_text_only \
-        ++decode_config.num_latency_tokens=$num_latency_tokens \
-        ++decode_config.do_layershift=$do_layershift \
-        ++decode_log=$decode_log \
-        ++ckpt_path=$model \
-        ++output_text_only=$output_text_only \
-        ++speech_sample_rate=$speech_sample_rate \
-        ++log_config.log_file=$decode_log/infer.log \
+# # -m debugpy --listen 5678 --wait-for-client
+# python $code_dir/inference_tts.py \
+#         hydra.run.dir=$ckpt_path \
+#         ++model_config.llm_name=qwen2.5-0.5b \
+#         ++model_config.llm_path=$llm_path \
+#         ++model_config.llm_dim=896 \
+#         ++model_config.codec_decoder_path=$codec_decoder_path \
+#         ++model_config.codec_decode=true \
+#         ++model_config.vocab_config.code_layer=$code_layer \
+#         ++model_config.vocab_config.total_audio_vocabsize=$total_audio_vocabsize \
+#         ++model_config.vocab_config.total_vocabsize=$total_vocabsize \
+#         ++model_config.codec_decoder_type=$codec_decoder_type \
+#         ++model_config.group_decode=$group_decode \
+#         ++model_config.group_decode_adapter_type=$group_decode_adapter_type \
+#         ++model_config.use_text_stream=false \
+#         ++dataset_config.context_sentence_num=$context_sentence_num \
+#         ++dataset_config.dataset=speech_dataset_tts \
+#         ++dataset_config.val_data_path=$val_data_path \
+#         ++dataset_config.train_data_path=$val_data_path \
+#         ++dataset_config.inference_mode=true \
+#         ++dataset_config.vocab_config.code_layer=$code_layer \
+#         ++dataset_config.vocab_config.total_audio_vocabsize=$total_audio_vocabsize \
+#         ++dataset_config.vocab_config.total_vocabsize=$total_vocabsize \
+#         ++dataset_config.num_latency_tokens=$num_latency_tokens \
+#         ++dataset_config.do_layershift=$do_layershift \
+#         ++dataset_config.use_emo=true \
+#         ++train_config.model_name=tts \
+#         ++train_config.freeze_encoder=true \
+#         ++train_config.freeze_llm=true \
+#         ++train_config.freeze_group_decode_adapter=true \
+#         ++train_config.batching_strategy=custom \
+#         ++train_config.num_epochs=1 \
+#         ++train_config.val_batch_size=1 \
+#         ++train_config.num_workers_dataloader=2 \
+#         ++decode_config.text_repetition_penalty=$text_repetition_penalty \
+#         ++decode_config.audio_repetition_penalty=$audio_repetition_penalty \
+#         ++decode_config.max_new_tokens=$max_new_tokens \
+#         ++decode_config.do_sample=$do_sample \
+#         ++decode_config.top_p=$top_p \
+#         ++decode_config.top_k=$top_k \
+#         ++decode_config.temperature=$temperature \
+#         ++decode_config.decode_text_only=$decode_text_only \
+#         ++decode_config.num_latency_tokens=$num_latency_tokens \
+#         ++decode_config.do_layershift=$do_layershift \
+#         ++decode_log=$decode_log \
+#         ++ckpt_path=$model \
+#         ++output_text_only=$output_text_only \
+#         ++speech_sample_rate=$speech_sample_rate \
+#         ++log_config.log_file=$decode_log/infer.log \
 
-python examples/tts/utils/decode_whisper_v3.py --parent_dir $decode_log --audio_subdir pred_audio/neutral_prompt_speech
+# python examples/tts/utils/decode_whisper_v3.py --parent_dir $decode_log --audio_subdir pred_audio/neutral_prompt_speech
 
 
-bash scripts/compute_wer.sh $decode_log
+# bash scripts/compute_wer.sh $decode_log
 
 python examples/tts/utils/eval_emo_acc.py --gt $val_data_path --pred $decode_log --audio_subdir pred_audio/neutral_prompt_speech
 

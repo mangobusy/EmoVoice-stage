@@ -1,6 +1,6 @@
 #!/bin/bash
 export PYTHONPATH=$PYTHONPATH:/data/Shizihui/MyModel/src
-export CUDA_VISIBLE_DEVICES=0,1,2
+export CUDA_VISIBLE_DEVICES=2
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=1
 
@@ -17,21 +17,23 @@ llm_dim=896                         # 896 1536 3584 8192  -> 0.5B 1.5B 3B 7B
 code_layer=3                        # 1 single semantic code layer   2 3 4 5 6 7 8 group semantic code layers 
 total_audio_vocabsize=4160          # the vocab size of the codec token
 llm_vocabsize=152000                # the vocab size of the LLM model (Qwen2 here)
-EMOTION_BINS=10
+EMOTION_BINS=50
 # total_vocabsize=$((total_audio_vocabsize + llm_vocabsize))
 total_vocabsize=$((total_audio_vocabsize + llm_vocabsize + EMOTION_BINS * 2))
 
 EMOTION_LOSS_WEIGHT=5.0
-AUDIO_LOSS_WEIGHT=1.0
+AUDIO_LOSS_WEIGHT=2.0
 TEXT_LOSS_WEIGHT=1.0
+shuffle_train=true
+context_sentence_num=3
 
 # code settings
 num_latency_tokens=0                # number of latency tokens (in front of the generated audio tokens)
 do_layershift=false                 # if false, tokens in each layers use the same codebook, otherwise, use different codebooks
 
 # dataset settings
-train_data_path="/data/Shizihui/Data_preprocess/Total/EN/4_dataset/4_dataset-train.jsonl"
-val_data_path="/data/Shizihui/Data_preprocess/Total/EN/4_dataset/4_dataset-val.jsonl"
+train_data_path="/data/Shizihui/Data_preprocess/Total/train.jsonl"
+val_data_path="/data/Shizihui/Data_preprocess/Total/val.jsonl"
 # train_data_path="/root/autodl-tmp/data/story_audio_w_emotion_tra/MsceneSpeech/MsceneSpeech_train_emotion.jsonl"
 # val_data_path="/root/autodl-tmp/data/VoiceAssistant-400K-v2/val_0.jsonl"
 
@@ -57,7 +59,7 @@ group_decode=true
 group_decode_adapter_type=linear
 
 # log settings
-exp_name="UT-EN-12"
+exp_name="UT-EN-21"
 
 wandb_entity_name=u03zs21-sun-yat-sen-university
 wandb_project_name=SLAM-Omni
@@ -83,6 +85,7 @@ hydra.run.dir=$output_dir \
 ++model_config.group_decode=$group_decode \
 ++model_config.vocab_config.emotion_bins=$EMOTION_BINS \
 ++model_config.group_decode_adapter_type=$group_decode_adapter_type \
+++dataset_config.context_sentence_num=$context_sentence_num \
 ++dataset_config.dataset=speech_dataset_tts \
 ++dataset_config.train_data_path=$train_data_path \
 ++dataset_config.val_data_path=$val_data_path \
@@ -114,7 +117,7 @@ hydra.run.dir=$output_dir \
 ++train_config.output_dir=$output_dir \
 ++train_config.use_fp16=$use_fp16 \
 ++train_config.use_peft=$use_peft \
-++train_config.shuffle_train=true \
+++train_config.shuffle_train=$shuffle_train \
 ++metric=acc \
 ++log_config.use_wandb=$use_wandb \
 ++log_config.wandb_entity_name=$wandb_entity_name \

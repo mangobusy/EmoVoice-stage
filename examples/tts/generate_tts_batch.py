@@ -149,7 +149,7 @@ def main(kwargs: DictConfig):
 				batch[key] = batch[key].to(device) if isinstance(batch[key], torch.Tensor) else batch[key]
 
 			# audio_prompt_path = batch["neutral_speaker_wav"][0]
-			audio_prompt_path = "/data/Shizihui/Data_preprocess/audio/EN/auntcretesemancipation_07_hill_0012.wav"
+			audio_prompt_path = "/data/Shizihui/Data_preprocess/audio/7967/wonderfuladventures_01_seacole_0001.wav"
 			# =======================================================================================
 			# audio_prompt_path = "/root/autodl-tmp/data/EmoVoice-DB-Raw/"+audio_prompt_path
 			# =======================================================================================

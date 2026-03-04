@@ -20,6 +20,7 @@ def main(parent_dir, audio_subdir):
             # print("id:",id)
             audio_filename = id + '.wav'
             # print("audio_filename:",audio_filename)
+            # breakpoint()
             # audio_filename = id
             audio_filepath = os.path.join(audio_dir, audio_filename)
             # print("audio_filepath:",audio_filepath)

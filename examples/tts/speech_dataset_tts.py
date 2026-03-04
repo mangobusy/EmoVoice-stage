@@ -26,6 +26,11 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
 
         self.en_dataset = dataset_config.get("en_dataset", False)
         self.prompt_template = "<SYSTEM>: {}\n "
+        # ===================================================================================
+        self.context_template = "<CONTEXT>: {}\n "
+        self.context_sentence_num = dataset_config.get("context_sentence_num", 1)  # 从配置中读取需要的历史句子数量
+        # ===================================================================================
+
         self.answer_template = "{}"
         self.inference_mode = dataset_config.get("inference_mode", False)
         self.seed = dataset_config.get("seed", 42)
@@ -206,6 +211,21 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         target_text = data_dict.get("target_text", None)
         key = data_dict.get("key", None)
         neutral_speaker_wav = data_dict.get("neutral_speaker_wav", None)
+        # ===================================================================================
+        context_list = data_dict.get('context', None)
+        # print("self.context_sentence_num:", self.context_sentence_num)
+        if context_list:
+            # 2. 直接使用切片获取后 N 句话
+            # 比如 context_sentence=3，就取 [-3:]
+            # 如果列表长度不够，Python会自动返回全部现有的内容，不会越界报错
+            selected_context = context_list[-self.context_sentence_num:]
+            
+            # 3. 将取出的列表拼接成一个字符串，用空格 " " 隔开（如果想用回车隔开，可以换成 "\n"）
+            context_prompt = " ".join(selected_context)
+        else:
+            # 如果一开始 context 就是空的或者 None
+            context_prompt = None
+        # ===================================================================================
 
         # ===================================================================================
         # [MODIFIED] 提取情绪标签
@@ -219,14 +239,17 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         target_audio, target_audio_length = self.extract_audio_feature(target_audio)
         # print("target_audio:", target_audio)
         prompt="Say this sentence. "
+        # prompt = context_prompt
         if self.use_emo:
             if "emotion_text_prompt" in data_dict:
                 emotion_text_prompt = data_dict.get("emotion_text_prompt" , None)
                 emotion_text_prompt = re.sub(r'[。！？\.,!\?]$', '', emotion_text_prompt)
                 emotion_text_prompt = re.sub(r'\.(?=.)', ',', emotion_text_prompt)
                 prompt = "Say this sentence with emotion of {}. ".format(emotion_text_prompt)
-  
+        
+        context = self.context_template.format(context_prompt) if context_prompt else ""
         prompt = self.prompt_template.format(prompt) #'<SYSTEM>: Say this sentence. \n '
+        prompt = context + prompt
         prompt_ids = self.tokenizer.encode(prompt)
         # print("prompt_ids:", prompt_ids)
         prompt_ids = [self._input_t] + prompt_ids + [self._eot]
@@ -340,6 +363,8 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         elif self.modeling_paradigm == "serial":
             answer_length = len(answer_text_ids) + target_audio_length
             answer_ids = torch.full((self.code_layer, answer_length), -1)
+            # print("answer_text_ids:", answer_text_ids)
+            # print("answer_text_ids shape:", answer_text_ids.shape)  
             # print("answer_ids before:", answer_ids)
             labels_ids = copy.deepcopy(answer_ids)
             ori_example_ids = copy.deepcopy(example_ids)
@@ -347,8 +372,11 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
             for i in range(self.code_layer):
                 labels_ids[i] = torch.cat( (answer_text_ids.unsqueeze(0), target_audio[i].unsqueeze(0)), dim=1 )
                 # print("labels_ids[{}]:".format(i), labels_ids[i])
+                # print("labels_ids[{}] shape:".format(i), labels_ids[i].shape)
                 answer_ids[i] = torch.cat( (answer_text_ids.unsqueeze(0), self.layershift(target_audio[i], i).unsqueeze(0)), dim=1 )
                 # print("answer_ids[{}]:".format(i), answer_ids[i])
+                # print("answer_ids[{}] shape:".format(i), answer_ids[i].shape)
+                # breakpoint()
             example_ids=[]
             whole_labels_ids=[]
             for i in range(self.code_layer):
@@ -364,6 +392,7 @@ class SpeechDatasetJsonl(torch.utils.data.Dataset):
         elif self.modeling_paradigm == "interleaved":
             target_audio = target_audio.squeeze(0)
             example_ids = example_ids[0]
+            
             answer_text_ids, target_audio = self.pad_interleaved_chunks(answer_text_ids, target_audio)
             target_audio_labels = self.layershift(target_audio, 0)
             interleaved_sequence = self.interleave_chunks(answer_text_ids, target_audio_labels)
