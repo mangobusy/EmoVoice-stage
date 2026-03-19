@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>TTS 连续流式评测系统 (自适应版)</title>
+    <style>
+        /* 全局应用边框盒模型，确保百分比宽度精准 */
+        * { box-sizing: border-box; }
+        
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f5f7fa; color: #333; margin: 0; padding: 15px; padding-bottom: 80px; }
+        .header { background: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 15px; border-left: 5px solid #007bff; }
+        h2 { margin-top: 0; margin-bottom: 10px; color: #333; font-size: 22px; }
+        p { margin: 5px 0; font-size: 14px; color: #555; }
+        
+        /* 表格自适应核心样式 */
+        .table-container { width: 100%; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }
+        
+        /* table-layout: fixed 强制表格按设定的百分比分配宽度，绝不撑出横向滚动条 */
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        
+        /* 表头吸顶 */
+        th { position: sticky; top: 0; background-color: #007bff; color: white; padding: 12px 5px; z-index: 10; text-align: center; border-right: 1px solid #0056b3; box-shadow: 0 2px 2px -1px rgba(0,0,0,0.4); font-size: 14px; line-height: 1.3; }
+        th:last-child { border-right: none; }
+        
+        td { border-bottom: 1px solid #eee; border-right: 1px solid #eee; padding: 12px 8px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; }
+        td:last-child { border-right: none; }
+        tr:hover { background-color: #f9fbfd; }
+        
+        /* 严格控制列宽占比 (总计 100%) */
+        .col-text { width: 15%; text-align: left; padding-left: 15px !important; font-size: 14px; line-height: 1.6; color: #111; }
+        .col-model { width: 17%; text-align: center; } /* 17% * 5个模型 = 85% */
+        
+        /* 自适应音频播放器 */
+        audio { width: 100%; height: 32px; margin-bottom: 8px; outline: none; border-radius: 4px; }
+        
+        /* 超紧凑的打分栏排版，适应窄屏幕 */
+        .score-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; width: 100%; }
+        .score-label { font-size: 12px; font-weight: bold; color: #555; width: 38px; text-align: left; flex-shrink: 0; }
+        
+        /* 让按钮组填满剩余空间并均匀分布 */
+        .radio-group { display: flex; flex: 1; justify-content: space-between; gap: 2px; }
+        
+        /* 正方形紧凑按钮 */
+        .radio-group label { 
+            flex: 1; 
+            max-width: 26px; 
+            height: 24px; 
+            line-height: 22px; /* 垂直居中文字 */
+            text-align: center; 
+            padding: 0; 
+            font-size: 12px; 
+            border: 1px solid #ccc; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            background-color: #f8f9fa; 
+            color: #444; 
+            transition: all 0.1s; 
+            user-select: none;
+        }
+        .radio-group input[type="radio"] { display: none; }
+        .radio-group input[type="radio"]:checked + label { background-color: #007bff; color: white; border-color: #007bff; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transform: scale(1.05); }
+        
+        /* 底部悬浮提交栏 */
+        .bottom-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: rgba(255,255,255,0.95); backdrop-filter: blur(5px); padding: 12px 0; border-top: 1px solid #eee; box-shadow: 0 -2px 10px rgba(0,0,0,0.05); text-align: center; z-index: 100; }
+        button { padding: 10px 30px; font-size: 16px; cursor: pointer; background-color: #28a745; color: white; border: none; border-radius: 5px; font-weight: bold; transition: background 0.2s; box-shadow: 0 2px 4px rgba(40,167,69,0.3); }
+        button:hover { background-color: #218838; transform: translateY(-1px); }
+        
+        /* 漏打分警告样式 */
+        .missing-score { background-color: #fff3f3; outline: 2px solid #dc3545; outline-offset: -2px; border-radius: 4px; }
+    </style>
+    <!-- 引入你的 data.js -->
+    <script src="data.js"></script>
+</head>
+<body>
+
+    <div class="header">
+        <h2>TTS 评测</h2>
+        <p>页面已按文本顺序排列，在一个Model内可以**从上到下连贯播放**，直接感受上下文连贯性。<br>
+        <p>打分时需横向对比，即对比同一条数据不同模型的结果<br><br>
+        <p><b>MOS</b>: 声音的自然度、清晰度、流畅度、音质、是否有背景噪音。 （1~5分：1分为差，5分为好）<br>
+        <p><b>C-MOS</b>: 语气、情感是否符合上下文语境。（1~5分：1分为差，5分为好）（例如，结合文本判断 单句内/当前句与上一句是否有明显的情感衔接不流畅） </p>
+
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-text">Target Text (当前句文本)</th>
+                    <th class="col-model">Model 1<br><span style="font-size: 11px; font-weight: normal;">(cosyvoice)</span></th>
+                    <th class="col-model">Model 2<br><span style="font-size: 11px; font-weight: normal;">(cosyvoice2)</span></th>
+                    <th class="col-model">Model 3<br><span style="font-size: 11px; font-weight: normal;">(emovoice)</span></th>
+                    <th class="col-model">Model 4<br><span style="font-size: 11px; font-weight: normal;">(indextts2)</span></th>
+                    <th class="col-model">Model 5<br><span style="font-size: 11px; font-weight: normal;">(my)</span></th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                <!-- JS 动态渲染全部行 -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 底部固定栏 -->
+    <div class="bottom-bar">
+        <button onclick="exportResults()">✅ 完成打分并下载 CSV 结果</button>
+    </div>
+
+<script>
+    let results = {}; // 用于存储所有打分
+    const fixedModelOrder =["cosyvoice", "cosyvoice2", "emovoice", "indextts2", "my"];
+
+    function renderTable() {
+        if (!testData || testData.length === 0) {
+            alert("未加载到数据，请检查 data.js 是否生成成功！");
+            return;
+        }
+
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = '';
+
+        testData.forEach((data, rowIndex) => {
+            // 初始化存储对象
+            if (!results[data.id]) {
+                results[data.id] = { scores: {} };
+                fixedModelOrder.forEach(model => results[data.id].scores[model] = {});
+            }
+
+            const tr = document.createElement('tr');
+            tr.id = `row_${data.id}`;
+
+            // 第一列：文本
+            const tdText = document.createElement('td');
+            tdText.className = 'col-text';
+            // 使用 word-wrap 防止长英文单词撑破表格
+            tdText.innerHTML = `<b>${rowIndex + 1}.</b> ${data.text}`;
+            tr.appendChild(tdText);
+
+            // 后五列：5个模型
+            fixedModelOrder.forEach((modelKey, colIndex) => {
+                const audioSrc = data.audios[modelKey];
+                const tdModel = document.createElement('td');
+                tdModel.className = 'col-model';
+                tdModel.id = `cell_${data.id}_${modelKey}`;
+
+                // 渲染极简打分栏，按钮改为正方形小方块
+                tdModel.innerHTML = `
+                    <audio controls src="${audioSrc}" preload="none"></audio>
+                    
+                    <div class="score-row">
+                        <div class="score-label">MOS</div>
+                        <div class="radio-group">
+                            ${[1,2,3,4,5].map(score => `
+                                <input type="radio" id="mos_${data.id}_${modelKey}_${score}" name="mos_${data.id}_${modelKey}" value="${score}" onchange="saveScore('${data.id}', '${modelKey}', 'mos', ${score})">
+                                <label for="mos_${data.id}_${modelKey}_${score}">${score}</label>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="score-row">
+                        <div class="score-label">CMOS</div>
+                        <div class="radio-group">
+                            ${[1,2,3,4,5].map(score => `
+                                <input type="radio" id="cmos_${data.id}_${modelKey}_${score}" name="cmos_${data.id}_${modelKey}" value="${score}" onchange="saveScore('${data.id}', '${modelKey}', 'cmos', ${score})">
+                                <label for="cmos_${data.id}_${modelKey}_${score}">${score}</label>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+                tr.appendChild(tdModel);
+            });
+
+            tbody.appendChild(tr);
+        });
+    }
+
+    // 保存分数，同时清除该单元格的警告红框
+    function saveScore(dataId, modelKey, metric, score) {
+        results[dataId].scores[modelKey][metric] = score;
+        const cell = document.getElementById(`cell_${dataId}_${modelKey}`);
+        if (cell.classList.contains('missing-score')) {
+            cell.classList.remove('missing-score');
+        }
+    }
+
+    // 导出结果并检查是否漏打
+    function exportResults() {
+        let hasMissing = false;
+        let firstMissingElement = null;
+
+        testData.forEach(data => {
+            fixedModelOrder.forEach(modelKey => {
+                const cell = document.getElementById(`cell_${data.id}_${modelKey}`);
+                const scoreData = results[data.id].scores[modelKey];
+                
+                if (!scoreData.mos || !scoreData.cmos) {
+                    hasMissing = true;
+                    cell.classList.add('missing-score'); // 标红提示
+                    if (!firstMissingElement) {
+                        firstMissingElement = cell; // 记录第一个漏打的格子以便滚动过去
+                    }
+                } else {
+                    cell.classList.remove('missing-score');
+                }
+            });
+        });
+
+        if (hasMissing) {
+            alert("⚠️ 导出失败！\n您还有部分音频未完成打分，已用红框标出，请补全后再次点击下载。");
+            // 自动滚动到第一个漏打分的格子处，留出100px的表头偏移量
+            const y = firstMissingElement.getBoundingClientRect().top + window.scrollY - 100;
+            window.scrollTo({ top: y, behavior: 'smooth' });
+            return;
+        }
+
+        // 组装 CSV 数据
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
+        csvContent += "Data_ID,Model_Name,MOS,C_MOS\n";
+
+        testData.forEach(data => {
+            const dataScores = results[data.id].scores;
+            fixedModelOrder.forEach(modelKey => {
+                const mos = dataScores[modelKey].mos;
+                const cmos = dataScores[modelKey].cmos;
+                csvContent += `${data.id},${modelKey},${mos},${cmos}\n`;
+            });
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "tts_evaluation_results.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    window.onload = renderTable;
+</script>
+
+</body>
+</html>

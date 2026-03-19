@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>TTS 主观评测系统 (MOS & C-MOS)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f5f7fa; color: #333; max-width: 1000px; margin: 0 auto; padding: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-left: 5px solid #007bff; padding-left: 15px; }
+        h3 { margin-top: 0; color: #555; }
+        .audio-row { display: flex; align-items: center; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; }
+        .audio-row:last-child { border-bottom: none; }
+        .system-name { font-weight: bold; width: 150px; color: #007bff; }
+        .rating-group { display: flex; flex-direction: column; align-items: center; margin-left: 20px; }
+        .rating-title { font-size: 14px; font-weight: bold; margin-bottom: 5px; color: #666; }
+        .radio-toolbar label { display: inline-block; background-color: #f1f1f1; padding: 5px 15px; font-family: sans-serif, Arial; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; margin: 0 2px; }
+        .radio-toolbar input[type="radio"] { display: none; }
+        .radio-toolbar input[type="radio"]:checked + label { background-color: #007bff; color: white; border-color: #007bff; }
+        .nav-buttons { display: flex; justify-content: space-between; margin-top: 20px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #submit-btn { background-color: #28a745; display: none; }
+        
+        /* 上下文样式 */
+        .context-line { margin: 5px 0; color: #666; font-style: italic; line-height: 1.5; }
+    </style>
+    <!-- 引入自动生成的 data.js -->
+    <script src="data.js"></script>
+</head>
+<body>
+
+    <div class="card header">
+        <div>
+            <h2>TTS 语音评测</h2>
+            <p>请结合前文语境，听完所有音频后打分。</p>
+            <p><b>MOS (Acoustic):</b> 声音的自然度、清晰度、流畅度、音质。 （1~5分：1分为差，5分为好）<br><b>C-MOS (Contextual):</b> 语气、情感是否符合当前的上下文语境。 （1~5分：1分为差，5分为好）</p>
+        </div>
+        <h2 id="progress">1 / 10</h2>
+    </div>
+
+    <div class="card">
+        <h3>Context (前文语境 - 前三句)</h3>
+        <div id="context-container">
+            <i>Loading...</i>
+        </div>
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+        
+        <h3>Content (当前合成文本)</h3>
+        <p><b id="content-text" style="font-size: 20px; color: #000;">Loading...</b></p>
+    </div>
+
+    <div class="card" id="evaluation-container">
+        <!-- 音频打分区域将由 JS 动态生成 -->
+    </div>
+
+    <div class="nav-buttons">
+        <button id="prev-btn" onclick="prevPage()">上一条</button>
+        <button id="next-btn" onclick="nextPage()">下一条</button>
+        <button id="submit-btn" onclick="exportResults()">完成并下载打分结果 (CSV)</button>
+    </div>
+
+<script>
+    let currentIndex = 0;
+    let results = {}; // 用于存储打分结果
+    
+    // 固定的模型顺序
+    const fixedModelOrder =["cosyvoice", "cosyvoice2", "emovoice", "indextts2", "my"];
+
+    function renderPage() {
+        if (!testData || testData.length === 0) {
+            alert("未加载到数据，请检查 data.js 是否生成成功！");
+            return;
+        }
+
+        const data = testData[currentIndex];
+        document.getElementById('progress').innerText = `${currentIndex + 1} / ${testData.length}`;
+        
+        // 渲染上下文
+        const contextHtml = data.context && data.context.length > 0 
+            ? data.context.map(line => `<p class="context-line">${line}</p>`).join('') 
+            : `<p class="context-line">（无前文语境）</p>`;
+        document.getElementById('context-container').innerHTML = contextHtml;
+        
+        // 渲染当前文本
+        document.getElementById('content-text').innerText = data.text;
+
+        const container = document.getElementById('evaluation-container');
+        container.innerHTML = '';
+
+        // 初始化当前数据的打分记录对象
+        if (!results[data.id]) {
+            results[data.id] = { scores: {} };
+        }
+
+        // 按照固定的数组顺序渲染音频
+        fixedModelOrder.forEach((modelKey, index) => {
+            // 这里将显示为 System 1 (cosyvoice), System 5 (my) 等
+            const systemLabel = `System ${index + 1}<br><span style="font-size:12px;color:#888;"></span>`; 
+            const audioSrc = data.audios[modelKey];
+            
+            // 获取之前可能保存的打分记录
+            const savedMos = results[data.id].scores[modelKey]?.mos || null;
+            const savedCmos = results[data.id].scores[modelKey]?.cmos || null;
+
+            const row = document.createElement('div');
+            row.className = 'audio-row';
+            row.innerHTML = `
+                <div class="system-name">${systemLabel}</div>
+                <audio controls src="${audioSrc}"></audio>
+                
+                <div class="rating-group">
+                    <div class="rating-title">1. MOS (音质)</div>
+                    <div class="radio-toolbar">
+                        ${[1,2,3,4,5].map(score => `
+                            <input type="radio" id="mos_${index}_${score}" name="mos_${index}" value="${score}" ${savedMos == score ? 'checked' : ''} onchange="saveScore('${modelKey}', 'mos', ${score})">
+                            <label for="mos_${index}_${score}">${score}</label>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="rating-group">
+                    <div class="rating-title">2. C-MOS (上下文匹配)</div>
+                    <div class="radio-toolbar">
+                        ${[1,2,3,4,5].map(score => `
+                            <input type="radio" id="cmos_${index}_${score}" name="cmos_${index}" value="${score}" ${savedCmos == score ? 'checked' : ''} onchange="saveScore('${modelKey}', 'cmos', ${score})">
+                            <label for="cmos_${index}_${score}">${score}</label>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+            container.appendChild(row);
+        });
+
+        // 按钮状态管理
+        document.getElementById('prev-btn').disabled = currentIndex === 0;
+        
+        if (currentIndex === testData.length - 1) {
+            document.getElementById('next-btn').style.display = 'none';
+            document.getElementById('submit-btn').style.display = 'block';
+        } else {
+            document.getElementById('next-btn').style.display = 'block';
+            document.getElementById('submit-btn').style.display = 'none';
+        }
+    }
+
+    function saveScore(modelKey, metric, score) {
+        const dataId = testData[currentIndex].id;
+        if (!results[dataId].scores[modelKey]) {
+            results[dataId].scores[modelKey] = {};
+        }
+        results[dataId].scores[modelKey][metric] = score;
+    }
+
+    // 检查是否所有模型都打完了分
+    function checkAllScored() {
+        const dataId = testData[currentIndex].id;
+        const currentScores = results[dataId].scores;
+        for (let key of fixedModelOrder) {
+            if (!currentScores[key] || !currentScores[key].mos || !currentScores[key].cmos) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function nextPage() {
+        if (!checkAllScored()) {
+            alert("请为当前页面的所有音频完成 MOS 和 C-MOS 打分后再进入下一条！");
+            return;
+        }
+        if (currentIndex < testData.length - 1) {
+            currentIndex++;
+            renderPage();
+            window.scrollTo(0, 0);
+        }
+    }
+
+    function prevPage() {
+        if (currentIndex > 0) {
+            currentIndex--;
+            renderPage();
+            window.scrollTo(0, 0);
+        }
+    }
+
+    // 导出 CSV
+    function exportResults() {
+        if (!checkAllScored()) {
+            alert("请为最后一页的所有音频完成打分！");
+            return;
+        }
+
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // 加入BOM解决中文乱码
+        csvContent += "Data_ID,Model_Name,MOS,C_MOS\n";
+
+        testData.forEach(data => {
+            const dataScores = results[data.id].scores;
+            // 按照固定顺序导出，方便查看
+            fixedModelOrder.forEach(modelKey => {
+                const mos = dataScores[modelKey].mos;
+                const cmos = dataScores[modelKey].cmos;
+                csvContent += `${data.id},${modelKey},${mos},${cmos}\n`;
+            });
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "tts_evaluation_results.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    window.onload = renderPage;
+</script>
+
+</body>
+</html>
