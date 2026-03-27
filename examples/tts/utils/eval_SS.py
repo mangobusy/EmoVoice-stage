@@ -10,9 +10,13 @@ from tqdm import tqdm
 from collections import defaultdict
 
 # ================= 配置区域 =================
-PRED_AUDIO_DIR = "/data/Shizihui/MyModel/ckp/UT-EN-23/EN-5/pred_audio/neutral_prompt_speech"  # 你的模型生成的音频文件夹
+PRED_AUDIO_DIR = "/data/Shizihui/MyModel/ckp/UT-EN-31-final/EN-6/pred_audio/neutral_prompt_speech"  # 你的模型生成的音频文件夹
+# PRED_AUDIO_DIR = "/data/Shizihui/Baseline/cosyvoice2/pred_audio-4"  # 你的模型生成的音频文件夹
+
 GT_AUDIO_DIR = None      # 真实的参考音频文件夹 (如果不算还原度，设为 None)
-OUTPUT_CSV = "/data/Shizihui/MyModel/ckp/UT-EN-23/EN-5/pred_audio/neutral_prompt_speech/_ss_results.csv"  # 导出的结果文件名
+OUTPUT_CSV = "/data/Shizihui/MyModel/ckp/UT-EN-31-final/EN-6/pred_audio/neutral_prompt_speech/_ss_results.csv"  # 导出的结果文件名
+# OUTPUT_CSV = "/data/Shizihui/Baseline/cosyvoice2/pred_audio-4/_ss_results.csv"  # 导出的结果文件名
+
 MODEL_NAME = "microsoft/wavlm-base-plus-sv" # WavLM 预训练模型
 # ============================================
 

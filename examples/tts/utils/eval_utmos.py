@@ -9,13 +9,19 @@ from tqdm import tqdm
 
 def main():
     parser = argparse.ArgumentParser(description="UTMOS Evaluation")
-    parser.add_argument("--audio_dir", type=str, default="/data/Shizihui/MyModel/ckp/UT-EN-23/EN-5/pred_audio/neutral_prompt_speech", help="Audio file path.")
+    parser.add_argument("--audio_dir", type=str, default="/data/Shizihui/MyModel/ckp/UT-EN-31-final/EN-4/pred_audio/neutral_prompt_speech", help="Audio file path.")
     parser.add_argument("--ext", type=str, default="wav", help="Audio extension.")
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "xpu" if torch.xpu.is_available() else "cpu"
 
-    predictor = torch.hub.load("tarepan/SpeechMOS:v1.2.0", "utmos22_strong", trust_repo=True)
+    # predictor = torch.hub.load("tarepan/SpeechMOS:v1.2.0", "utmos22_strong", trust_repo=True)
+    predictor = torch.hub.load(
+        "tarepan/SpeechMOS:v1.2.0",
+        "utmos22_strong",
+        trust_repo=True,
+        skip_validation=True,
+    )
     predictor = predictor.to(device)
 
     audio_paths = list(Path(args.audio_dir).rglob(f"*.{args.ext}"))
